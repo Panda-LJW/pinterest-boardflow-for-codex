@@ -426,6 +426,16 @@ select {
 .thumb-frame:has(img.is-loaded) {
   aspect-ratio:auto
 }
+.thumb-frame.has-ratio,.thumb-frame.has-ratio:has(img) {
+  min-height:0;
+  aspect-ratio:var(--thumb-ratio)
+}
+.thumb-frame.has-ratio .preview-trigger,.thumb-frame.has-ratio img {
+  height:100%
+}
+.thumb-frame.has-ratio img {
+  object-fit:cover
+}
 .thumb-frame.has-error {
   display:grid;
   min-height:160px;

@@ -9,7 +9,7 @@ import { startLocalPanelServer, type LocalPanelServerHandle } from "./local-pane
 import { WorkspaceRegistry } from "./workspace.js";
 import { ReferenceError, ReferenceSessions, REFERENCE_SESSION_PATTERN } from "./references.js";
 
-export { InboxService, parseInboxFilename } from "./inbox.js";
+export { InboxService, parseImageDimensions, parseInboxFilename } from "./inbox.js";
 export { startLocalPanelServer, writeTextToMacClipboard } from "./local-panel-server.js";
 export { WorkspaceRegistry } from "./workspace.js";
 export { ReferenceSessions, ReferenceError } from "./references.js";

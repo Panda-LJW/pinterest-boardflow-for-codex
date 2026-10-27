@@ -21440,7 +21440,7 @@ import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { createReadStream, existsSync, watch } from "node:fs";
 import { constants } from "node:fs";
-import { copyFile, link, lstat, mkdir, readFile, readdir, realpath, rename, rm, stat } from "node:fs/promises";
+import { copyFile, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
@@ -21505,6 +21505,88 @@ async function walkImages(root, directory = root) {
   }
   return paths;
 }
+function jpegOrientation(exif) {
+  if (exif.toString("latin1", 0, 6) !== "Exif\0\0") return 1;
+  const tiff = exif.subarray(6);
+  if (tiff.length < 8) return 1;
+  const little = tiff.toString("latin1", 0, 2) === "II";
+  const u16 = (offset) => little ? tiff.readUInt16LE(offset) : tiff.readUInt16BE(offset);
+  const u32 = (offset) => little ? tiff.readUInt32LE(offset) : tiff.readUInt32BE(offset);
+  const ifd = u32(4);
+  if (ifd + 2 > tiff.length) return 1;
+  const count = u16(ifd);
+  for (let index = 0; index < count; index += 1) {
+    const entry = ifd + 2 + index * 12;
+    if (entry + 10 > tiff.length) break;
+    if (u16(entry) === 274) return u16(entry + 8);
+  }
+  return 1;
+}
+function parseImageDimensions(data) {
+  const valid = (width, height) => width > 0 && height > 0 ? { width, height } : null;
+  if (data.length >= 24 && data.readUInt32BE(0) === 2303741511 && data.toString("latin1", 12, 16) === "IHDR") {
+    return valid(data.readUInt32BE(16), data.readUInt32BE(20));
+  }
+  if (data.length >= 10 && data.toString("latin1", 0, 3) === "GIF") return valid(data.readUInt16LE(6), data.readUInt16LE(8));
+  if (data.length >= 30 && data.toString("latin1", 0, 4) === "RIFF" && data.toString("latin1", 8, 12) === "WEBP") {
+    const chunk = data.toString("latin1", 12, 16);
+    if (chunk === "VP8 ") return valid(data.readUInt16LE(26) & 16383, data.readUInt16LE(28) & 16383);
+    if (chunk === "VP8L") {
+      const bits = data.readUInt32LE(21);
+      return valid((bits & 16383) + 1, (bits >> 14 & 16383) + 1);
+    }
+    if (chunk === "VP8X") return valid(data.readUIntLE(24, 3) + 1, data.readUIntLE(27, 3) + 1);
+    return null;
+  }
+  if (data.length >= 4 && data[0] === 255 && data[1] === 216) {
+    let orientation = 1;
+    let offset = 2;
+    while (offset + 4 <= data.length) {
+      if (data[offset] !== 255) return null;
+      const marker = data[offset + 1] ?? 0;
+      if (marker === 255) {
+        offset += 1;
+        continue;
+      }
+      if (marker === 216 || marker === 1 || marker >= 208 && marker <= 215) {
+        offset += 2;
+        continue;
+      }
+      const length = data.readUInt16BE(offset + 2);
+      if (marker === 225 && offset + 4 + length - 2 <= data.length) orientation = jpegOrientation(data.subarray(offset + 4, offset + 2 + length));
+      if (marker >= 192 && marker <= 207 && marker !== 196 && marker !== 200 && marker !== 204) {
+        if (offset + 9 > data.length) return null;
+        const height = data.readUInt16BE(offset + 5), width = data.readUInt16BE(offset + 7);
+        return orientation >= 5 && orientation <= 8 ? valid(height, width) : valid(width, height);
+      }
+      offset += 2 + length;
+    }
+    return null;
+  }
+  if (data.length >= 12 && data.toString("latin1", 4, 8) === "ftyp" && /^avi[fs]/.test(data.toString("latin1", 8, 12))) {
+    const ispe = data.indexOf("ispe", 0, "latin1");
+    if (ispe < 4 || ispe + 16 > data.length) return null;
+    const width = data.readUInt32BE(ispe + 8), height = data.readUInt32BE(ispe + 12);
+    const irot = data.indexOf("irot", 0, "latin1");
+    const quarterTurn = irot >= 4 && irot + 4 < data.length && ((data[irot + 4] ?? 0) & 3) % 2 === 1;
+    return quarterTurn ? valid(height, width) : valid(width, height);
+  }
+  return null;
+}
+async function readImageDimensions(filePath, size) {
+  const handle = await open(filePath, "r");
+  try {
+    for (const length of [64 * 1024, 1024 * 1024]) {
+      const buffer = Buffer.alloc(Math.min(length, size));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      const dimensions = parseImageDimensions(buffer.subarray(0, bytesRead));
+      if (dimensions || bytesRead >= size) return dimensions;
+    }
+    return null;
+  } finally {
+    await handle.close();
+  }
+}
 async function hashFile(filePath) {
   return new Promise((resolveHash, rejectHash) => {
     const digest = createHash("sha256");
@@ -21541,6 +21623,7 @@ var InboxService = class {
   cacheRoot;
   reconcileIntervalMs;
   assets = /* @__PURE__ */ new Map();
+  dimensions = /* @__PURE__ */ new Map();
   version = 0;
   watchers = [];
   reconcileTimer = null;
@@ -21722,6 +21805,12 @@ var InboxService = class {
       const segments = sourceRelativePath.split("/");
       const boardSlug = segments.length > 1 ? segments[0] ?? "unsorted" : "unsorted";
       const parsed = parseInboxFilename(basename(sourcePath));
+      const signature = hash(`${sourceRelativePath}:${fileStat.size}:${fileStat.mtimeMs}`).slice(0, 16);
+      let dimensions = this.dimensions.get(signature);
+      if (dimensions === void 0) {
+        dimensions = await readImageDimensions(sourcePath, fileStat.size).catch(() => null);
+        this.dimensions.set(signature, dimensions);
+      }
       return {
         id: hash(sourceRelativePath).slice(0, 24),
         pinId: parsed.pinId,
@@ -21731,9 +21820,11 @@ var InboxService = class {
         extension: parsed.extension,
         size: fileStat.size,
         updatedAt: fileStat.mtime.toISOString(),
+        width: dimensions?.width ?? null,
+        height: dimensions?.height ?? null,
         sourcePath,
         sourceRelativePath,
-        signature: hash(`${sourceRelativePath}:${fileStat.size}:${fileStat.mtimeMs}`).slice(0, 16)
+        signature
       };
     });
     records.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
@@ -21742,6 +21833,8 @@ var InboxService = class {
     const nextSignature = records.map((item) => item.signature).sort().join(":");
     if (previousSignature !== nextSignature) this.version += 1;
     this.assets = nextAssets;
+    const liveSignatures = new Set(records.map((item) => item.signature));
+    for (const signature of this.dimensions.keys()) if (!liveSignatures.has(signature)) this.dimensions.delete(signature);
     this.refreshedAt = (/* @__PURE__ */ new Date()).toISOString();
   }
   getAsset(assetId) {
@@ -21897,7 +21990,7 @@ var InboxService = class {
 // src/local-panel-server.ts
 import { randomBytes as randomBytes2 } from "node:crypto";
 import { constants as constants2, existsSync as existsSync2 } from "node:fs";
-import { open, readFile as readFile2 } from "node:fs/promises";
+import { open as open2, readFile as readFile2 } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname as dirname2, join as join2 } from "node:path";
 import { spawn } from "node:child_process";
@@ -22247,7 +22340,7 @@ async function startLocalPanelServer(options) {
       if (previewMatch) {
         const asset = await options.inbox.resolveAsset(previewMatch[1] ?? "");
         if (!asset) throw new HttpError(404, "\u539F\u56FE\u5DF2\u4E0D\u5728\u7D20\u6750\u5E93\u4E2D\uFF0C\u8BF7\u5237\u65B0\u540E\u91CD\u8BD5");
-        const file = await open(asset.sourcePath, constants2.O_RDONLY | constants2.O_NOFOLLOW);
+        const file = await open2(asset.sourcePath, constants2.O_RDONLY | constants2.O_NOFOLLOW);
         try {
           const info = await file.stat();
           if (!info.isFile()) throw new HttpError(404, "\u539F\u56FE\u4E0D\u53EF\u7528");
@@ -22857,6 +22950,7 @@ export {
   ReferenceSessions,
   WorkspaceRegistry,
   inbox,
+  parseImageDimensions,
   parseInboxFilename,
   references,
   server,

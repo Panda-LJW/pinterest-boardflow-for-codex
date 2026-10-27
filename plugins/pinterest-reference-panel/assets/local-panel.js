@@ -281,6 +281,11 @@ function pinCard(asset) {
   card.dataset.assetId = asset.id;
   card.dataset.title = asset.title;
   const frame = element("div", "thumb-frame");
+  // Reserve the real height before the thumbnail loads so masonry picks the right column.
+  if (asset.width > 0 && asset.height > 0) {
+    frame.classList.add("has-ratio");
+    frame.style.setProperty("--thumb-ratio", `${asset.width} / ${asset.height}`);
+  }
   const preview = button("preview-trigger", null, `预览：${asset.title}`, () => void openPreview(asset));
   preview.append(thumbnailImage(asset.id, asset.title), element("span", "thumb-skeleton"));
   frame.append(preview, button("pin-select", "+", `加入参考：${asset.title}`, () => toggleReference(asset)));
@@ -410,7 +415,7 @@ function renderContent() {
     elements.loadMoreButton.hidden = true; elements.listEnd.hidden = true;
   } else {
     if (state.assets.length) {
-      reconcileMasonry(state.assets, asset => asset.id, asset => `${asset.updatedAt}:${asset.size}:${state.thumbnailEpoch}`, pinCard);
+      reconcileMasonry(state.assets, asset => asset.id, asset => `${asset.updatedAt}:${asset.size}:${asset.width}x${asset.height}:${state.thumbnailEpoch}`, pinCard);
       lastColumnCount = masonryColumnCount();
     }
     else elements.content.replaceChildren(emptyState(state.query ? "没有找到相关图片" : state.boardId ? "这个图版还没有图片" : "留下一点灵感", state.query ? "搜索会覆盖整个素材库。试试其他标题、图版名称或 Pin ID。" : "在 Pinterest 扩展中下载图片，它们会自动出现在这里。", state.query ? "清除搜索" : null, state.query ? clearSearch : null));

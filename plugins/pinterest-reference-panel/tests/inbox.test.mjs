@@ -3,7 +3,7 @@ import { access, mkdtemp, mkdir, readFile, readdir, rm, symlink, unlink, writeFi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { InboxService, parseInboxFilename } from "../dist/server.bundle.js";
+import { InboxService, parseImageDimensions, parseInboxFilename } from "../dist/server.bundle.js";
 
 async function waitFor(assertion, timeoutMs = 4_000) {
   const deadline = Date.now() + timeoutMs;
@@ -37,6 +37,35 @@ test("parses deterministic Pinterest Inbox filenames", () => {
   });
 });
 
+test("reads displayed image dimensions from file headers", () => {
+  const png = Buffer.alloc(24);
+  png.writeUInt32BE(0x89504e47, 0); png.write("IHDR", 12, "latin1"); png.writeUInt32BE(380, 16); png.writeUInt32BE(700, 20);
+  assert.deepEqual(parseImageDimensions(png), { width: 380, height: 700 });
+
+  const gif = Buffer.from("GIF89a\x40\x01\xf0\x00", "latin1");
+  assert.deepEqual(parseImageDimensions(gif), { width: 320, height: 240 });
+
+  const webp = (chunk, fill) => { const data = Buffer.alloc(30); data.write("RIFF", 0, "latin1"); data.write("WEBP", 8, "latin1"); data.write(chunk, 12, "latin1"); fill(data); return data; };
+  assert.deepEqual(parseImageDimensions(webp("VP8 ", data => { data.writeUInt16LE(736, 26); data.writeUInt16LE(1104, 28); })), { width: 736, height: 1104 });
+  assert.deepEqual(parseImageDimensions(webp("VP8L", data => data.writeUInt32LE((735) | (1103 << 14), 21))), { width: 736, height: 1104 });
+  assert.deepEqual(parseImageDimensions(webp("VP8X", data => { data.writeUIntLE(735, 24, 3); data.writeUIntLE(1103, 27, 3); })), { width: 736, height: 1104 });
+
+  const exif = Buffer.alloc(6 + 8 + 2 + 12);
+  exif.write("Exif\0\0", 0, "latin1"); exif.write("MM", 6, "latin1"); exif.writeUInt16BE(42, 8); exif.writeUInt32BE(8, 10);
+  exif.writeUInt16BE(1, 14); exif.writeUInt16BE(0x0112, 16); exif.writeUInt16BE(3, 18); exif.writeUInt32BE(1, 20); exif.writeUInt16BE(6, 24);
+  const app1 = Buffer.concat([Buffer.from([0xff, 0xe1]), Buffer.from([0, exif.length + 2]), exif]);
+  const sof = Buffer.from([0xff, 0xc0, 0x00, 0x11, 0x08, 0x02, 0x58, 0x03, 0x20]);
+  assert.deepEqual(parseImageDimensions(Buffer.concat([Buffer.from([0xff, 0xd8]), sof])), { width: 800, height: 600 });
+  assert.deepEqual(parseImageDimensions(Buffer.concat([Buffer.from([0xff, 0xd8]), app1, sof])), { width: 600, height: 800 });
+
+  const avif = Buffer.alloc(48);
+  avif.write("ftypavif", 4, "latin1"); avif.write("ispe", 24, "latin1"); avif.writeUInt32BE(1200, 32); avif.writeUInt32BE(900, 36);
+  assert.deepEqual(parseImageDimensions(avif), { width: 1200, height: 900 });
+
+  assert.equal(parseImageDimensions(Buffer.from("image-a")), null);
+  assert.equal(parseImageDimensions(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10])), null);
+});
+
 test("initial scan groups board folders and ignores temporary files", async (context) => {
   const root = await mkdtemp(join(tmpdir(), "pinterest-inbox-test-"));
   const inboxRoot = join(root, "PinterestInbox");
@@ -55,6 +84,7 @@ test("initial scan groups board folders and ignores temporary files", async (con
   assert.equal(result.page.total, 1);
   assert.equal(result.page.assets[0].pinId, "123");
   assert.equal(result.page.assets[0].boardId, "character-study");
+  assert.equal(result.page.assets[0].width, null);
   assert.equal(result.page.boards[0].pinCount, 1);
   assert.equal(result.page.watcherStatus, "watching");
   assert.ok(result.thumbnailErrors[result.page.assets[0].id]);
@@ -267,6 +297,7 @@ test("macOS thumbnail generation returns a small JPEG data URL", { skip: process
   context.after(() => service.close());
   const publicPage = await service.getPublicPage();
   const assetId = publicPage.assets[0].id;
+  assert.deepEqual([publicPage.assets[0].width, publicPage.assets[0].height], [380, 700]);
   const concurrent = await Promise.all(Array.from({ length: 8 }, () => service.getThumbnail(assetId)));
   assert.ok(concurrent.every((thumbnail) => thumbnail?.data.equals(concurrent[0].data)));
   const result = await service.getPage();
