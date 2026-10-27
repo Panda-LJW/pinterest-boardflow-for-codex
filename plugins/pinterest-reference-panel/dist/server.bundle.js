@@ -21440,7 +21440,7 @@ import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { createReadStream, existsSync, watch } from "node:fs";
 import { constants } from "node:fs";
-import { copyFile, link, lstat, mkdir, readFile, readdir, realpath, rename, rm, stat } from "node:fs/promises";
+import { copyFile, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
@@ -21505,6 +21505,88 @@ async function walkImages(root, directory = root) {
   }
   return paths;
 }
+function jpegOrientation(exif) {
+  if (exif.toString("latin1", 0, 6) !== "Exif\0\0") return 1;
+  const tiff = exif.subarray(6);
+  if (tiff.length < 8) return 1;
+  const little = tiff.toString("latin1", 0, 2) === "II";
+  const u16 = (offset) => little ? tiff.readUInt16LE(offset) : tiff.readUInt16BE(offset);
+  const u32 = (offset) => little ? tiff.readUInt32LE(offset) : tiff.readUInt32BE(offset);
+  const ifd = u32(4);
+  if (ifd + 2 > tiff.length) return 1;
+  const count = u16(ifd);
+  for (let index = 0; index < count; index += 1) {
+    const entry = ifd + 2 + index * 12;
+    if (entry + 10 > tiff.length) break;
+    if (u16(entry) === 274) return u16(entry + 8);
+  }
+  return 1;
+}
+function parseImageDimensions(data) {
+  const valid = (width, height) => width > 0 && height > 0 ? { width, height } : null;
+  if (data.length >= 24 && data.readUInt32BE(0) === 2303741511 && data.toString("latin1", 12, 16) === "IHDR") {
+    return valid(data.readUInt32BE(16), data.readUInt32BE(20));
+  }
+  if (data.length >= 10 && data.toString("latin1", 0, 3) === "GIF") return valid(data.readUInt16LE(6), data.readUInt16LE(8));
+  if (data.length >= 30 && data.toString("latin1", 0, 4) === "RIFF" && data.toString("latin1", 8, 12) === "WEBP") {
+    const chunk = data.toString("latin1", 12, 16);
+    if (chunk === "VP8 ") return valid(data.readUInt16LE(26) & 16383, data.readUInt16LE(28) & 16383);
+    if (chunk === "VP8L") {
+      const bits = data.readUInt32LE(21);
+      return valid((bits & 16383) + 1, (bits >> 14 & 16383) + 1);
+    }
+    if (chunk === "VP8X") return valid(data.readUIntLE(24, 3) + 1, data.readUIntLE(27, 3) + 1);
+    return null;
+  }
+  if (data.length >= 4 && data[0] === 255 && data[1] === 216) {
+    let orientation = 1;
+    let offset = 2;
+    while (offset + 4 <= data.length) {
+      if (data[offset] !== 255) return null;
+      const marker = data[offset + 1] ?? 0;
+      if (marker === 255) {
+        offset += 1;
+        continue;
+      }
+      if (marker === 216 || marker === 1 || marker >= 208 && marker <= 215) {
+        offset += 2;
+        continue;
+      }
+      const length = data.readUInt16BE(offset + 2);
+      if (marker === 225 && offset + 4 + length - 2 <= data.length) orientation = jpegOrientation(data.subarray(offset + 4, offset + 2 + length));
+      if (marker >= 192 && marker <= 207 && marker !== 196 && marker !== 200 && marker !== 204) {
+        if (offset + 9 > data.length) return null;
+        const height = data.readUInt16BE(offset + 5), width = data.readUInt16BE(offset + 7);
+        return orientation >= 5 && orientation <= 8 ? valid(height, width) : valid(width, height);
+      }
+      offset += 2 + length;
+    }
+    return null;
+  }
+  if (data.length >= 12 && data.toString("latin1", 4, 8) === "ftyp" && /^avi[fs]/.test(data.toString("latin1", 8, 12))) {
+    const ispe = data.indexOf("ispe", 0, "latin1");
+    if (ispe < 4 || ispe + 16 > data.length) return null;
+    const width = data.readUInt32BE(ispe + 8), height = data.readUInt32BE(ispe + 12);
+    const irot = data.indexOf("irot", 0, "latin1");
+    const quarterTurn = irot >= 4 && irot + 4 < data.length && ((data[irot + 4] ?? 0) & 3) % 2 === 1;
+    return quarterTurn ? valid(height, width) : valid(width, height);
+  }
+  return null;
+}
+async function readImageDimensions(filePath, size) {
+  const handle = await open(filePath, "r");
+  try {
+    for (const length of [64 * 1024, 1024 * 1024]) {
+      const buffer = Buffer.alloc(Math.min(length, size));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      const dimensions = parseImageDimensions(buffer.subarray(0, bytesRead));
+      if (dimensions || bytesRead >= size) return dimensions;
+    }
+    return null;
+  } finally {
+    await handle.close();
+  }
+}
 async function hashFile(filePath) {
   return new Promise((resolveHash, rejectHash) => {
     const digest = createHash("sha256");
@@ -21541,6 +21623,7 @@ var InboxService = class {
   cacheRoot;
   reconcileIntervalMs;
   assets = /* @__PURE__ */ new Map();
+  dimensions = /* @__PURE__ */ new Map();
   version = 0;
   watchers = [];
   reconcileTimer = null;
@@ -21722,6 +21805,12 @@ var InboxService = class {
       const segments = sourceRelativePath.split("/");
       const boardSlug = segments.length > 1 ? segments[0] ?? "unsorted" : "unsorted";
       const parsed = parseInboxFilename(basename(sourcePath));
+      const signature = hash(`${sourceRelativePath}:${fileStat.size}:${fileStat.mtimeMs}`).slice(0, 16);
+      let dimensions = this.dimensions.get(signature);
+      if (dimensions === void 0) {
+        dimensions = await readImageDimensions(sourcePath, fileStat.size).catch(() => null);
+        this.dimensions.set(signature, dimensions);
+      }
       return {
         id: hash(sourceRelativePath).slice(0, 24),
         pinId: parsed.pinId,
@@ -21731,9 +21820,11 @@ var InboxService = class {
         extension: parsed.extension,
         size: fileStat.size,
         updatedAt: fileStat.mtime.toISOString(),
+        width: dimensions?.width ?? null,
+        height: dimensions?.height ?? null,
         sourcePath,
         sourceRelativePath,
-        signature: hash(`${sourceRelativePath}:${fileStat.size}:${fileStat.mtimeMs}`).slice(0, 16)
+        signature
       };
     });
     records.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
@@ -21742,6 +21833,8 @@ var InboxService = class {
     const nextSignature = records.map((item) => item.signature).sort().join(":");
     if (previousSignature !== nextSignature) this.version += 1;
     this.assets = nextAssets;
+    const liveSignatures = new Set(records.map((item) => item.signature));
+    for (const signature of this.dimensions.keys()) if (!liveSignatures.has(signature)) this.dimensions.delete(signature);
     this.refreshedAt = (/* @__PURE__ */ new Date()).toISOString();
   }
   getAsset(assetId) {
@@ -21897,7 +21990,7 @@ var InboxService = class {
 // src/local-panel-server.ts
 import { randomBytes as randomBytes2 } from "node:crypto";
 import { constants as constants2, existsSync as existsSync2 } from "node:fs";
-import { open, readFile as readFile2 } from "node:fs/promises";
+import { open as open2, readFile as readFile2 } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname as dirname2, join as join2 } from "node:path";
 import { spawn } from "node:child_process";
@@ -21938,7 +22031,7 @@ var ReferenceSessions = class {
   }
   require(id) {
     const session = REFERENCE_SESSION_PATTERN.test(id) ? this.sessions.get(id) : void 0;
-    if (!session) throw new ReferenceError2(410, "\u53C2\u8003\u4F1A\u8BDD\u5DF2\u5931\u6548\uFF0C\u8BF7\u8BA9 Codex \u91CD\u65B0\u6253\u5F00\u53C2\u8003\u7BEE");
+    if (!session) throw new ReferenceError2(410, "\u53C2\u8003\u4F1A\u8BDD\u5DF2\u5931\u6548\uFF0C\u8BF7\u8BA9 AI \u52A9\u624B\u91CD\u65B0\u6253\u5F00\u53C2\u8003\u7BEE");
     return session;
   }
   async describe(id) {
@@ -22199,7 +22292,7 @@ async function startLocalPanelServer(options) {
       assertApiSession(request, sessionId, csrfToken, cookieName);
       const referenceSessionId = () => {
         const id = request.headers["x-pinterest-reference-session"];
-        if (typeof id !== "string") throw new HttpError(400, "\u8BF7\u4ECE\u5F53\u524D Codex \u4EFB\u52A1\u6253\u5F00\u53C2\u8003\u7BEE");
+        if (typeof id !== "string") throw new HttpError(400, "\u8BF7\u4ECE\u5F53\u524D AI \u52A9\u624B\u4EFB\u52A1\u6253\u5F00\u53C2\u8003\u7BEE");
         references2.require(id);
         return id;
       };
@@ -22247,11 +22340,11 @@ async function startLocalPanelServer(options) {
       if (previewMatch) {
         const asset = await options.inbox.resolveAsset(previewMatch[1] ?? "");
         if (!asset) throw new HttpError(404, "\u539F\u56FE\u5DF2\u4E0D\u5728\u7D20\u6750\u5E93\u4E2D\uFF0C\u8BF7\u5237\u65B0\u540E\u91CD\u8BD5");
-        const file = await open(asset.sourcePath, constants2.O_RDONLY | constants2.O_NOFOLLOW);
+        const file = await open2(asset.sourcePath, constants2.O_RDONLY | constants2.O_NOFOLLOW);
         try {
           const info = await file.stat();
           if (!info.isFile()) throw new HttpError(404, "\u539F\u56FE\u4E0D\u53EF\u7528");
-          if (info.size > 64 * 1024 * 1024) throw new HttpError(413, "\u539F\u56FE\u8D85\u8FC7 64 MB\uFF0C\u8BF7\u590D\u5236\u8DEF\u5F84\u540E\u4EA4\u7ED9 Codex \u67E5\u770B");
+          if (info.size > 64 * 1024 * 1024) throw new HttpError(413, "\u539F\u56FE\u8D85\u8FC7 64 MB\uFF0C\u8BF7\u590D\u5236\u8DEF\u5F84\u540E\u4EA4\u7ED9 AI \u52A9\u624B\u67E5\u770B");
           const current = await options.inbox.resolveAsset(asset.id);
           if (!current || current.sourcePath !== asset.sourcePath) throw new HttpError(409, "\u539F\u56FE\u4F4D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u8BF7\u5237\u65B0\u540E\u91CD\u8BD5");
           const types = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".avif": "image/avif", ".gif": "image/gif" };
@@ -22557,7 +22650,7 @@ var server = new McpServer(
   { name: "pinterest-reference-panel", version: "0.4.1" },
   {
     capabilities: { resources: {}, tools: {} },
-    instructions: "When Pinterest BoardFlow (formerly Pinterest Inbox) is selected or mentioned, an unqualified request to open it (including \u6253\u5F00\u9879\u76EE) means launch its running Board-style masonry material panel, unless the user explicitly asks for source code, documentation or Codex project management. Call open_pinterest_inbox_web, then actually call the Codex open_in_codex tool with target {type: 'browser', url: the complete returned URL} and placement 'right' for THIS task. Discover deferred tools when needed. Opening README or locating a repository does not fulfill this request. Do not use desktop automation on Codex or start a second InboxService as a workaround. Report opened only after the browser action succeeds; distinguish queued from displayed. Retain the returned referenceSessionId for THIS task. When the user asks to use selected references, call get_pinterest_reference_selection with that exact ID, then read the returned original local image files before visual analysis or generation. Use numbered files in returned order. Never guess a session or read another task's basket. To reopen the same basket pass its referenceSessionId; omitting it creates an empty independent basket. Recheck the returned revision before using references if the user changes selection. Selecting images never sends a message. Do not copy, re-encode or modify originals. Path copying remains an explicit fallback. Never accept arbitrary source URLs or paths."
+    instructions: "When Pinterest BoardFlow (formerly Pinterest Inbox) is selected or mentioned, an unqualified request to open it (including \u6253\u5F00\u9879\u76EE) means launch its running Board-style masonry material panel, unless the user explicitly asks for source code, documentation or project management. Call open_pinterest_inbox_web, then actually open the complete returned URL in the host's visible browser for THIS task: in Codex call open_in_codex with target {type: 'browser', url} and placement 'right'; in the Claude desktop app call the built-in browser preview_start with that url; without an in-app browser run `open '<url>'`. Discover deferred tools when needed. Opening README or locating a repository does not fulfill this request. Do not use desktop automation on the host app or start a second InboxService as a workaround. Report opened only after the browser action succeeds; distinguish queued from displayed. Retain the returned referenceSessionId for THIS task. When the user asks to use selected references, call get_pinterest_reference_selection with that exact ID, then read the returned original local image files before visual analysis or generation. Use numbered files in returned order. Never guess a session or read another task's basket. To reopen the same basket pass its referenceSessionId; omitting it creates an empty independent basket. Recheck the returned revision before using references if the user changes selection. Selecting images never sends a message. Do not copy, re-encode or modify originals. Path copying remains an explicit fallback. Never accept arbitrary source URLs or paths."
   }
 );
 async function workspaceCandidate(explicitRoot) {
@@ -22649,7 +22742,7 @@ server.registerTool(
   "open_pinterest_inbox_web",
   {
     title: "\u542F\u52A8 Pinterest BoardFlow \u7011\u5E03\u6D41\u770B\u677F",
-    description: "\u9009\u62E9\u6216\u63D0\u5230 Pinterest BoardFlow\uFF08\u65E7\u79F0 Pinterest Inbox\uFF09\u63D2\u4EF6\u540E\u8981\u6C42\u6253\u5F00/\u542F\u52A8\uFF08\u5982\u2018\u6253\u5F00\u9879\u76EE\u2019\uFF09\u65F6\u8C03\u7528\u3002\u542F\u52A8 Board \u7011\u5E03\u6D41\u7D20\u6750\u770B\u677F\u540E\uFF0C\u7EE7\u7EED\u8C03\u7528 Codex open_in_codex\uFF0C\u4EE5 target.type=browser\u3001target.url=\u8FD4\u56DE\u7684\u5B8C\u6574 URL\u3001placement=right \u663E\u793A\u5230\u5F53\u524D\u4EFB\u52A1\u53F3\u4FA7\u3002\u9996\u6B21\u4E0D\u4F20\u53C2\u6570\u521B\u5EFA\u72EC\u7ACB\u53C2\u8003\u7BEE\uFF1B\u4FDD\u5B58 referenceSessionId\uFF0C\u91CD\u5F00\u6216\u8BFB\u53D6\u9009\u56FE\u65F6\u4F20\u56DE\uFF0C\u4E0D\u5F97\u501F\u7528\u5176\u4ED6\u4EFB\u52A1\u7684\u4F1A\u8BDD\u3002\u53EA\u6709\u660E\u786E\u8981\u6E90\u7801\u6216\u6587\u6863\u65F6\u624D\u6253\u5F00\u6587\u4EF6\u3002",
+    description: "\u9009\u62E9\u6216\u63D0\u5230 Pinterest BoardFlow\uFF08\u65E7\u79F0 Pinterest Inbox\uFF09\u63D2\u4EF6\u540E\u8981\u6C42\u6253\u5F00/\u542F\u52A8\uFF08\u5982\u2018\u6253\u5F00\u9879\u76EE\u2019\uFF09\u65F6\u8C03\u7528\u3002\u542F\u52A8 Board \u7011\u5E03\u6D41\u7D20\u6750\u770B\u677F\u540E\uFF0C\u7528\u5BBF\u4E3B\u7684\u53EF\u89C1\u6D4F\u89C8\u5668\u6253\u5F00\u8FD4\u56DE\u7684\u5B8C\u6574 URL\uFF1ACodex \u8C03\u7528 open_in_codex\uFF08target.type=browser\u3001target.url=URL\u3001placement=right\uFF09\uFF0CClaude \u684C\u9762\u7248\u8C03\u7528\u5185\u7F6E\u6D4F\u89C8\u5668 preview_start\uFF08url=URL\uFF09\uFF0C\u6CA1\u6709\u5185\u5D4C\u6D4F\u89C8\u5668\u65F6\u7528 open \u547D\u4EE4\u6253\u5F00\u3002\u9996\u6B21\u4E0D\u4F20\u53C2\u6570\u521B\u5EFA\u72EC\u7ACB\u53C2\u8003\u7BEE\uFF1B\u4FDD\u5B58 referenceSessionId\uFF0C\u91CD\u5F00\u6216\u8BFB\u53D6\u9009\u56FE\u65F6\u4F20\u56DE\uFF0C\u4E0D\u5F97\u501F\u7528\u5176\u4ED6\u4EFB\u52A1\u7684\u4F1A\u8BDD\u3002\u53EA\u6709\u660E\u786E\u8981\u6E90\u7801\u6216\u6587\u6863\u65F6\u624D\u6253\u5F00\u6587\u4EF6\u3002",
     inputSchema: { referenceSessionId: external_exports.string().regex(REFERENCE_SESSION_PATTERN).optional() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     _meta: {
@@ -22664,7 +22757,7 @@ server.registerTool(
       const url = `${handle.url}?ref=${id}`;
       return {
         structuredContent: { status: "running", url, referenceSessionId: id, host: handle.host, port: handle.port, inbox: inbox.getSummary() },
-        content: [{ type: "text", text: `Pinterest BoardFlow \u670D\u52A1\u5DF2\u5C31\u7EEA\uFF1A${url}\u3002\u4E0B\u4E00\u6B65\u5FC5\u987B\u8C03\u7528 Codex open_in_codex\uFF1Atarget={type:"browser",url:"${url}"}\uFF0Cplacement="right"\u3002\u670D\u52A1\u5C31\u7EEA\u4E0D\u7B49\u4E8E\u770B\u677F\u5DF2\u663E\u793A\uFF0C\u8BF7\u6839\u636E\u6D4F\u89C8\u5668\u5DE5\u5177\u7ED3\u679C\u62A5\u544A\u5DF2\u6253\u5F00\u6216\u5DF2\u6392\u961F\u3002\u4FDD\u7559\u672C\u4EFB\u52A1\u7684\u53C2\u8003\u4F1A\u8BDD ${id}\u3002\u7528\u6237\u9009\u56FE\u540E\uFF0C\u901A\u8FC7 get_pinterest_reference_selection \u8BFB\u53D6\u8BE5\u4F1A\u8BDD\uFF0C\u518D\u8BFB\u53D6\u539F\u56FE\u3002` }]
+        content: [{ type: "text", text: `Pinterest BoardFlow \u670D\u52A1\u5DF2\u5C31\u7EEA\uFF1A${url}\u3002\u4E0B\u4E00\u6B65\u5FC5\u987B\u7528\u5BBF\u4E3B\u7684\u53EF\u89C1\u6D4F\u89C8\u5668\u6253\u5F00\u8BE5 URL\uFF1ACodex \u8C03\u7528 open_in_codex\uFF0Ctarget={type:"browser",url:"${url}"}\uFF0Cplacement="right"\uFF1BClaude \u684C\u9762\u7248\u8C03\u7528\u5185\u7F6E\u6D4F\u89C8\u5668 preview_start\uFF0Curl="${url}"\uFF1B\u6CA1\u6709\u5185\u5D4C\u6D4F\u89C8\u5668\u65F6\u6267\u884C open "${url}"\u3002\u670D\u52A1\u5C31\u7EEA\u4E0D\u7B49\u4E8E\u770B\u677F\u5DF2\u663E\u793A\uFF0C\u8BF7\u6839\u636E\u6D4F\u89C8\u5668\u5DE5\u5177\u7ED3\u679C\u62A5\u544A\u5DF2\u6253\u5F00\u6216\u5DF2\u6392\u961F\u3002\u4FDD\u7559\u672C\u4EFB\u52A1\u7684\u53C2\u8003\u4F1A\u8BDD ${id}\u3002\u7528\u6237\u9009\u56FE\u540E\uFF0C\u901A\u8FC7 get_pinterest_reference_selection \u8BFB\u53D6\u8BE5\u4F1A\u8BDD\uFF0C\u518D\u8BFB\u53D6\u539F\u56FE\u3002` }]
       };
     } catch (error2) {
       reportInternalError("local panel start failed", error2);
@@ -22857,6 +22950,7 @@ export {
   ReferenceSessions,
   WorkspaceRegistry,
   inbox,
+  parseImageDimensions,
   parseInboxFilename,
   references,
   server,

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { createReadStream, existsSync, watch, type FSWatcher } from "node:fs";
 import { constants } from "node:fs";
-import { copyFile, link, lstat, mkdir, readFile, readdir, realpath, rename, rm, stat } from "node:fs/promises";
+import { copyFile, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
@@ -33,6 +33,8 @@ export type InboxAsset = {
   extension: string;
   size: number;
   updatedAt: string;
+  width: number | null;
+  height: number | null;
   sourcePath: string;
   sourceRelativePath: string;
   signature: string;
@@ -146,6 +148,90 @@ async function walkImages(root: string, directory = root): Promise<string[]> {
   return paths;
 }
 
+export type ImageDimensions = { width: number; height: number };
+
+function jpegOrientation(exif: Buffer) {
+  if (exif.toString("latin1", 0, 6) !== "Exif\0\0") return 1;
+  const tiff = exif.subarray(6);
+  if (tiff.length < 8) return 1;
+  const little = tiff.toString("latin1", 0, 2) === "II";
+  const u16 = (offset: number) => little ? tiff.readUInt16LE(offset) : tiff.readUInt16BE(offset);
+  const u32 = (offset: number) => little ? tiff.readUInt32LE(offset) : tiff.readUInt32BE(offset);
+  const ifd = u32(4);
+  if (ifd + 2 > tiff.length) return 1;
+  const count = u16(ifd);
+  for (let index = 0; index < count; index += 1) {
+    const entry = ifd + 2 + index * 12;
+    if (entry + 10 > tiff.length) break;
+    if (u16(entry) === 0x0112) return u16(entry + 8);
+  }
+  return 1;
+}
+
+// Reads only the header bytes. Dimensions are reported as displayed, so EXIF
+// orientations 5-8 and AVIF quarter-turn rotations swap width and height.
+export function parseImageDimensions(data: Buffer): ImageDimensions | null {
+  const valid = (width: number, height: number) => width > 0 && height > 0 ? { width, height } : null;
+  if (data.length >= 24 && data.readUInt32BE(0) === 0x89504e47 && data.toString("latin1", 12, 16) === "IHDR") {
+    return valid(data.readUInt32BE(16), data.readUInt32BE(20));
+  }
+  if (data.length >= 10 && data.toString("latin1", 0, 3) === "GIF") return valid(data.readUInt16LE(6), data.readUInt16LE(8));
+  if (data.length >= 30 && data.toString("latin1", 0, 4) === "RIFF" && data.toString("latin1", 8, 12) === "WEBP") {
+    const chunk = data.toString("latin1", 12, 16);
+    if (chunk === "VP8 ") return valid(data.readUInt16LE(26) & 0x3fff, data.readUInt16LE(28) & 0x3fff);
+    if (chunk === "VP8L") {
+      const bits = data.readUInt32LE(21);
+      return valid((bits & 0x3fff) + 1, ((bits >> 14) & 0x3fff) + 1);
+    }
+    if (chunk === "VP8X") return valid(data.readUIntLE(24, 3) + 1, data.readUIntLE(27, 3) + 1);
+    return null;
+  }
+  if (data.length >= 4 && data[0] === 0xff && data[1] === 0xd8) {
+    let orientation = 1;
+    let offset = 2;
+    while (offset + 4 <= data.length) {
+      if (data[offset] !== 0xff) return null;
+      const marker = data[offset + 1] ?? 0;
+      if (marker === 0xff) { offset += 1; continue; }
+      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { offset += 2; continue; }
+      const length = data.readUInt16BE(offset + 2);
+      if (marker === 0xe1 && offset + 4 + length - 2 <= data.length) orientation = jpegOrientation(data.subarray(offset + 4, offset + 2 + length));
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        if (offset + 9 > data.length) return null;
+        const height = data.readUInt16BE(offset + 5), width = data.readUInt16BE(offset + 7);
+        return orientation >= 5 && orientation <= 8 ? valid(height, width) : valid(width, height);
+      }
+      offset += 2 + length;
+    }
+    return null;
+  }
+  if (data.length >= 12 && data.toString("latin1", 4, 8) === "ftyp" && /^avi[fs]/.test(data.toString("latin1", 8, 12))) {
+    const ispe = data.indexOf("ispe", 0, "latin1");
+    if (ispe < 4 || ispe + 16 > data.length) return null;
+    const width = data.readUInt32BE(ispe + 8), height = data.readUInt32BE(ispe + 12);
+    const irot = data.indexOf("irot", 0, "latin1");
+    const quarterTurn = irot >= 4 && irot + 4 < data.length && ((data[irot + 4] ?? 0) & 0x03) % 2 === 1;
+    return quarterTurn ? valid(height, width) : valid(width, height);
+  }
+  return null;
+}
+
+async function readImageDimensions(filePath: string, size: number) {
+  const handle = await open(filePath, "r");
+  try {
+    // JPEG EXIF/ICC segments can push the frame header past the first read.
+    for (const length of [64 * 1024, 1024 * 1024]) {
+      const buffer = Buffer.alloc(Math.min(length, size));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      const dimensions = parseImageDimensions(buffer.subarray(0, bytesRead));
+      if (dimensions || bytesRead >= size) return dimensions;
+    }
+    return null;
+  } finally {
+    await handle.close();
+  }
+}
+
 async function hashFile(filePath: string) {
   return new Promise<string>((resolveHash, rejectHash) => {
     const digest = createHash("sha256");
@@ -185,6 +271,7 @@ export class InboxService {
   readonly cacheRoot: string;
   private readonly reconcileIntervalMs: number;
   private assets = new Map<string, InboxAsset>();
+  private dimensions = new Map<string, ImageDimensions | null>();
   private version = 0;
   private watchers: FSWatcher[] = [];
   private reconcileTimer: NodeJS.Timeout | null = null;
@@ -368,6 +455,12 @@ export class InboxService {
       const segments = sourceRelativePath.split("/");
       const boardSlug = segments.length > 1 ? segments[0] ?? "unsorted" : "unsorted";
       const parsed = parseInboxFilename(basename(sourcePath));
+      const signature = hash(`${sourceRelativePath}:${fileStat.size}:${fileStat.mtimeMs}`).slice(0, 16);
+      let dimensions = this.dimensions.get(signature);
+      if (dimensions === undefined) {
+        dimensions = await readImageDimensions(sourcePath, fileStat.size).catch(() => null);
+        this.dimensions.set(signature, dimensions);
+      }
       return {
         id: hash(sourceRelativePath).slice(0, 24),
         pinId: parsed.pinId,
@@ -377,9 +470,11 @@ export class InboxService {
         extension: parsed.extension,
         size: fileStat.size,
         updatedAt: fileStat.mtime.toISOString(),
+        width: dimensions?.width ?? null,
+        height: dimensions?.height ?? null,
         sourcePath,
         sourceRelativePath,
-        signature: hash(`${sourceRelativePath}:${fileStat.size}:${fileStat.mtimeMs}`).slice(0, 16)
+        signature
       } satisfies InboxAsset;
     });
     records.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
@@ -388,6 +483,8 @@ export class InboxService {
     const nextSignature = records.map((item) => item.signature).sort().join(":");
     if (previousSignature !== nextSignature) this.version += 1;
     this.assets = nextAssets;
+    const liveSignatures = new Set(records.map((item) => item.signature));
+    for (const signature of this.dimensions.keys()) if (!liveSignatures.has(signature)) this.dimensions.delete(signature);
     this.refreshedAt = new Date().toISOString();
   }
 
