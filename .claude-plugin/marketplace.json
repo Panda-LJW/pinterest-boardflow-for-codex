@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "panda-ljw",
+  "description": "Superpanda 的个人 Claude Code 插件",
+  "owner": {
+    "name": "Superpanda"
+  },
+  "plugins": [
+    {
+      "name": "pinterest-reference-panel",
+      "description": "Pinterest BoardFlow：Pinterest 下载器与 Board 瀑布流看板，把本地视觉参考带进 Claude。",
+      "source": "./plugins/pinterest-reference-panel",
+      "category": "productivity"
+    }
+  ]
+}

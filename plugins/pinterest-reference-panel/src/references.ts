@@ -40,7 +40,7 @@ export class ReferenceSessions {
 
   require(id: string) {
     const session = REFERENCE_SESSION_PATTERN.test(id) ? this.sessions.get(id) : undefined;
-    if (!session) throw new ReferenceError(410, "参考会话已失效，请让 Codex 重新打开参考篮");
+    if (!session) throw new ReferenceError(410, "参考会话已失效，请让 AI 助手重新打开参考篮");
     return session;
   }
 

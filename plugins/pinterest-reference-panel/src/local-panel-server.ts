@@ -240,7 +240,7 @@ export async function startLocalPanelServer(options: LocalPanelServerOptions): P
 
       const referenceSessionId = () => {
         const id = request.headers["x-pinterest-reference-session"];
-        if (typeof id !== "string") throw new HttpError(400, "请从当前 Codex 任务打开参考篮");
+        if (typeof id !== "string") throw new HttpError(400, "请从当前 AI 助手任务打开参考篮");
         references.require(id);
         return id;
       };
@@ -294,7 +294,7 @@ export async function startLocalPanelServer(options: LocalPanelServerOptions): P
         try {
           const info = await file.stat();
           if (!info.isFile()) throw new HttpError(404, "原图不可用");
-          if (info.size > 64 * 1024 * 1024) throw new HttpError(413, "原图超过 64 MB，请复制路径后交给 Codex 查看");
+          if (info.size > 64 * 1024 * 1024) throw new HttpError(413, "原图超过 64 MB，请复制路径后交给 AI 助手查看");
           const current = await options.inbox.resolveAsset(asset.id);
           if (!current || current.sourcePath !== asset.sourcePath) throw new HttpError(409, "原图位置已变化，请刷新后重试");
           const types: Record<string, string> = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".avif": "image/avif", ".gif": "image/gif" };

@@ -448,7 +448,7 @@ function updateSelectionStatus() {
   elements.clearSelection.disabled = !entries.length || Boolean(state.selectionPending) || !state.selection;
   elements.copySelection.disabled = !entries.length || unavailable || Boolean(state.selectionPending) || Boolean(state.selectionError) || state.copyingSelection;
   elements.copySelection.textContent = state.copyingSelection ? "复制中…" : "复制路径";
-  elements.selectionHint.textContent = !referenceSessionId ? "此页可浏览素材；请让 Codex 为当前任务打开参考篮。"
+  elements.selectionHint.textContent = !referenceSessionId ? "此页可浏览素材；请让 AI 助手为当前任务打开参考篮。"
     : state.selectionError || (unavailable ? "有参考图已变化或不可用，请移除后重新选择。"
       : entries.length ? "回到当前对话，说“使用选中的参考图”。编号对应左侧顺序。" : "点击图片上的 ＋，组合你的下一组参考。");
   elements.selectionHint.classList.toggle("is-error", Boolean(state.selectionError) || unavailable);

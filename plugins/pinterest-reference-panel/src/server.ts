@@ -60,7 +60,7 @@ export const server = new McpServer(
   { name: "pinterest-reference-panel", version: "0.4.1" },
   {
     capabilities: { resources: {}, tools: {} },
-    instructions: "When Pinterest BoardFlow (formerly Pinterest Inbox) is selected or mentioned, an unqualified request to open it (including 打开项目) means launch its running Board-style masonry material panel, unless the user explicitly asks for source code, documentation or Codex project management. Call open_pinterest_inbox_web, then actually call the Codex open_in_codex tool with target {type: 'browser', url: the complete returned URL} and placement 'right' for THIS task. Discover deferred tools when needed. Opening README or locating a repository does not fulfill this request. Do not use desktop automation on Codex or start a second InboxService as a workaround. Report opened only after the browser action succeeds; distinguish queued from displayed. Retain the returned referenceSessionId for THIS task. When the user asks to use selected references, call get_pinterest_reference_selection with that exact ID, then read the returned original local image files before visual analysis or generation. Use numbered files in returned order. Never guess a session or read another task's basket. To reopen the same basket pass its referenceSessionId; omitting it creates an empty independent basket. Recheck the returned revision before using references if the user changes selection. Selecting images never sends a message. Do not copy, re-encode or modify originals. Path copying remains an explicit fallback. Never accept arbitrary source URLs or paths."
+    instructions: "When Pinterest BoardFlow (formerly Pinterest Inbox) is selected or mentioned, an unqualified request to open it (including 打开项目) means launch its running Board-style masonry material panel, unless the user explicitly asks for source code, documentation or project management. Call open_pinterest_inbox_web, then actually open the complete returned URL in the host's visible browser for THIS task: in Codex call open_in_codex with target {type: 'browser', url} and placement 'right'; in the Claude desktop app call the built-in browser preview_start with that url; without an in-app browser run `open '<url>'`. Discover deferred tools when needed. Opening README or locating a repository does not fulfill this request. Do not use desktop automation on the host app or start a second InboxService as a workaround. Report opened only after the browser action succeeds; distinguish queued from displayed. Retain the returned referenceSessionId for THIS task. When the user asks to use selected references, call get_pinterest_reference_selection with that exact ID, then read the returned original local image files before visual analysis or generation. Use numbered files in returned order. Never guess a session or read another task's basket. To reopen the same basket pass its referenceSessionId; omitting it creates an empty independent basket. Recheck the returned revision before using references if the user changes selection. Selecting images never sends a message. Do not copy, re-encode or modify originals. Path copying remains an explicit fallback. Never accept arbitrary source URLs or paths."
   }
 );
 
@@ -79,7 +79,7 @@ async function workspaceCandidate(explicitRoot?: string) {
       if (fileRoots.length === 1) return fileRoots[0] ?? null;
       if (explicitRoot && fileRoots.some((root) => explicitRoot === root || explicitRoot.startsWith(`${root}/`))) return explicitRoot;
     } catch {
-      // Codex hosts are not required to support roots/list. Use the explicit fallback.
+      // MCP hosts are not required to support roots/list. Use the explicit fallback.
     }
   }
   return explicitRoot ?? null;
@@ -165,7 +165,7 @@ server.registerTool(
   "open_pinterest_inbox_web",
   {
     title: "启动 Pinterest BoardFlow 瀑布流看板",
-    description: "选择或提到 Pinterest BoardFlow（旧称 Pinterest Inbox）插件后要求打开/启动（如‘打开项目’）时调用。启动 Board 瀑布流素材看板后，继续调用 Codex open_in_codex，以 target.type=browser、target.url=返回的完整 URL、placement=right 显示到当前任务右侧。首次不传参数创建独立参考篮；保存 referenceSessionId，重开或读取选图时传回，不得借用其他任务的会话。只有明确要源码或文档时才打开文件。",
+    description: "选择或提到 Pinterest BoardFlow（旧称 Pinterest Inbox）插件后要求打开/启动（如‘打开项目’）时调用。启动 Board 瀑布流素材看板后，用宿主的可见浏览器打开返回的完整 URL：Codex 调用 open_in_codex（target.type=browser、target.url=URL、placement=right），Claude 桌面版调用内置浏览器 preview_start（url=URL），没有内嵌浏览器时用 open 命令打开。首次不传参数创建独立参考篮；保存 referenceSessionId，重开或读取选图时传回，不得借用其他任务的会话。只有明确要源码或文档时才打开文件。",
     inputSchema: { referenceSessionId: z.string().regex(REFERENCE_SESSION_PATTERN).optional() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     _meta: {
@@ -180,7 +180,7 @@ server.registerTool(
       const url = `${handle.url}?ref=${id}`;
       return {
         structuredContent: { status: "running", url, referenceSessionId: id, host: handle.host, port: handle.port, inbox: inbox.getSummary() },
-        content: [{ type: "text" as const, text: `Pinterest BoardFlow 服务已就绪：${url}。下一步必须调用 Codex open_in_codex：target={type:"browser",url:"${url}"}，placement="right"。服务就绪不等于看板已显示，请根据浏览器工具结果报告已打开或已排队。保留本任务的参考会话 ${id}。用户选图后，通过 get_pinterest_reference_selection 读取该会话，再读取原图。` }]
+        content: [{ type: "text" as const, text: `Pinterest BoardFlow 服务已就绪：${url}。下一步必须用宿主的可见浏览器打开该 URL：Codex 调用 open_in_codex，target={type:"browser",url:"${url}"}，placement="right"；Claude 桌面版调用内置浏览器 preview_start，url="${url}"；没有内嵌浏览器时执行 open "${url}"。服务就绪不等于看板已显示，请根据浏览器工具结果报告已打开或已排队。保留本任务的参考会话 ${id}。用户选图后，通过 get_pinterest_reference_selection 读取该会话，再读取原图。` }]
       };
     } catch (error) {
       reportInternalError("local panel start failed", error);

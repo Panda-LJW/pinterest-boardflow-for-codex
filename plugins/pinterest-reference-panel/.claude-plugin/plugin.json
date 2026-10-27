@@ -1,0 +1,18 @@
+{
+  "name": "pinterest-reference-panel",
+  "version": "0.4.1",
+  "description": "Pinterest BoardFlow combines a Pinterest downloader with a local Board-style masonry dashboard and task-scoped visual references.",
+  "author": {
+    "name": "Superpanda"
+  },
+  "homepage": "https://github.com/Panda-LJW/pinterest-boardflow-for-codex",
+  "license": "MIT",
+  "mcpServers": {
+    "pinterest_reference_panel": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/dist/server.bundle.js"
+      ]
+    }
+  }
+}
