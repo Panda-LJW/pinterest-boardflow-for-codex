@@ -366,9 +366,21 @@ select {
 .content {
   padding:0 16px
 }
-.masonry,.skeleton-grid {
-  column-count:2;
+:root {
+  --masonry-columns:2
+}
+.skeleton-grid {
+  column-count:var(--masonry-columns);
   column-gap:12px
+}
+.masonry {
+  display:flex;
+  align-items:flex-start;
+  gap:12px
+}
+.masonry-column {
+  flex:1 1 0;
+  min-width:0
 }
 .pin-card {
   position:relative;
@@ -971,9 +983,14 @@ select {
   .results-row {
     padding:17px 24px
   }
-  .masonry,.skeleton-grid {
-    column-count:3;
+  :root {
+    --masonry-columns:3
+  }
+  .skeleton-grid {
     column-gap:18px
+  }
+  .masonry {
+    gap:18px
   }
   .pin-card {
     margin-bottom:20px
@@ -1003,8 +1020,8 @@ select {
   }
 }
 @media(min-width:1000px) {
-  .masonry,.skeleton-grid {
-    column-count:4
+  :root {
+    --masonry-columns:4
   }
   .boards-grid {
     grid-template-columns:repeat(4,minmax(0,1fr))
@@ -1022,8 +1039,8 @@ select {
   }
 }
 @media(min-width:1400px) {
-  .masonry,.skeleton-grid {
-    column-count:5
+  :root {
+    --masonry-columns:5
   }
 }
 @media(max-width:360px) {
@@ -1060,8 +1077,8 @@ select {
   }
 }
 @media(max-width:279px) {
-  .masonry,.skeleton-grid {
-    column-count:1
+  :root {
+    --masonry-columns:1
   }
   .boards-grid {
     grid-template-columns:1fr

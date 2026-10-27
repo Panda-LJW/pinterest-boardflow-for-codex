@@ -340,6 +340,62 @@ function reconcileGrid(className, records, key, stamp, create) {
   }
   for (const child of [...grid.children]) if (!keep.has(child)) child.remove();
 }
+// Explicit columns: appended cards go to the shortest column and placed cards never move.
+function masonryColumnCount() {
+  const value = Number.parseInt(getComputedStyle(elements.content).getPropertyValue("--masonry-columns"), 10);
+  return Number.isFinite(value) && value > 0 ? value : 2;
+}
+function shortestColumn(columns) {
+  return columns.reduce((best, column) => column.offsetHeight < best.offsetHeight ? column : best);
+}
+function reconcileMasonry(records, key, stamp, create) {
+  const columnCount = masonryColumnCount();
+  const keys = records.map(key);
+  let grid = elements.content.firstElementChild;
+  const previousKeys = grid?.classList.contains("masonry") ? grid.masonryKeys ?? [] : null;
+  const appendOnly = previousKeys !== null && grid.children.length === columnCount && previousKeys.length <= keys.length && previousKeys.every((id, index) => id === keys[index]);
+  const existing = new Map(previousKeys === null ? [] : [...grid.querySelectorAll(".pin-card")].map(node => [node.dataset.key, node]));
+  const cardFor = (record, index, batchIndex) => {
+    const id = keys[index], signature = stamp(record);
+    let card = existing.get(id);
+    if (!card || card.dataset.stamp !== signature) {
+      const fresh = create(record); fresh.dataset.key = id; fresh.dataset.stamp = signature;
+      fresh.style.setProperty("--enter-delay", `${Math.min(batchIndex, 6) * 18}ms`);
+      card?.replaceWith(fresh);
+      card = fresh;
+    }
+    return card;
+  };
+  if (appendOnly) {
+    const columns = [...grid.children];
+    for (let index = 0; index < previousKeys.length; index += 1) cardFor(records[index], index, index);
+    for (let index = previousKeys.length; index < records.length; index += 1) shortestColumn(columns).append(cardFor(records[index], index, index - previousKeys.length));
+  } else {
+    grid = element("section", "masonry");
+    const columns = Array.from({ length: columnCount }, () => element("div", "masonry-column"));
+    grid.append(...columns);
+    elements.content.replaceChildren(grid);
+    for (const [index, record] of records.entries()) shortestColumn(columns).append(cardFor(record, index, index));
+  }
+  grid.masonryKeys = keys;
+}
+// Fetch the next page while the end of the list is still about 1.5 screens away.
+// Geometry is read on every check because observer entries lag behind a fresh render.
+const loadMoreSentinel = elements.loadMoreButton.parentElement;
+function maybeAutoLoad() {
+  if (state.tab !== "pins" || !state.nextCursor || state.pageLoading || state.pageError || state.initialLoading || !loadMoreSentinel) return;
+  if (loadMoreSentinel.getBoundingClientRect().top < window.innerHeight * 2.5) void loadPage();
+}
+if (typeof IntersectionObserver !== "undefined" && loadMoreSentinel) {
+  new IntersectionObserver(() => maybeAutoLoad(), { rootMargin: "0px 0px 150% 0px" }).observe(loadMoreSentinel);
+}
+let lastColumnCount = null;
+window.addEventListener("resize", () => {
+  if (state.tab !== "pins" || !state.assets.length) return;
+  const columnCount = masonryColumnCount();
+  if (lastColumnCount !== null && columnCount !== lastColumnCount) renderContent();
+  lastColumnCount = columnCount;
+});
 function renderContent() {
   updateChrome();
   if (state.initialLoading) return;
@@ -353,12 +409,16 @@ function renderContent() {
     else elements.content.replaceChildren(emptyState(state.query ? "没有匹配的图版" : "还没有图版", state.query ? "试试更短的关键词，或清除搜索。" : "从 Pinterest 下载图片后，素材文件夹会显示在这里。"));
     elements.loadMoreButton.hidden = true; elements.listEnd.hidden = true;
   } else {
-    if (state.assets.length) reconcileGrid("masonry", state.assets, asset => asset.id, asset => `${asset.updatedAt}:${asset.size}:${state.thumbnailEpoch}`, pinCard);
+    if (state.assets.length) {
+      reconcileMasonry(state.assets, asset => asset.id, asset => `${asset.updatedAt}:${asset.size}:${state.thumbnailEpoch}`, pinCard);
+      lastColumnCount = masonryColumnCount();
+    }
     else elements.content.replaceChildren(emptyState(state.query ? "没有找到相关图片" : state.boardId ? "这个图版还没有图片" : "留下一点灵感", state.query ? "搜索会覆盖整个素材库。试试其他标题、图版名称或 Pin ID。" : "在 Pinterest 扩展中下载图片，它们会自动出现在这里。", state.query ? "清除搜索" : null, state.query ? clearSearch : null));
     elements.loadMoreButton.hidden = !state.nextCursor;
     elements.listEnd.hidden = !state.assets.length || Boolean(state.nextCursor);
   }
   hydrateThumbnails();
+  maybeAutoLoad();
 }
 async function copyAsset(asset) {
   if (state.pendingCopies.size || state.copyingSelection) { showToast("正在复制，请稍候"); return; }
