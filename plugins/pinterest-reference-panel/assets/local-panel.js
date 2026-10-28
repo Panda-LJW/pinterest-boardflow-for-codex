@@ -273,7 +273,7 @@ function applySelectionState(card) {
   const action = card.querySelector(".pin-select");
   const changed = card.classList.contains("is-selected") !== (index >= 0);
   card.classList.toggle("is-selected", index >= 0);
-  action.textContent = index >= 0 ? String(index + 1) : "+";
+  action.textContent = index >= 0 ? `已选 ${index + 1}` : "选择";
   action.setAttribute("aria-pressed", String(index >= 0));
   action.setAttribute("aria-label", `${index >= 0 ? "移除参考" : "加入参考"}：${card.dataset.title}`);
   action.title = index >= 0 ? `参考图 ${index + 1} · 点击移除` : "加入参考篮";
@@ -292,7 +292,7 @@ function pinCard(asset) {
   }
   const preview = button("preview-trigger", null, `预览：${asset.title}`, () => state.deleteMode ? togglePick(asset) : void openPreview(asset));
   preview.append(thumbnailImage(asset.id, asset.title), element("span", "thumb-skeleton"));
-  frame.append(preview, button("pin-select", "+", `加入参考：${asset.title}`, () => toggleReference(asset)), element("span", "pin-check"));
+  frame.append(preview, button("pin-select", "选择", `加入参考：${asset.title}`, () => toggleReference(asset)), element("span", "pin-check"));
   const body = element("div", "pin-body");
   const copy = element("div", "pin-copy-text");
   const title = element("p", "pin-title", asset.title); title.title = asset.title;
@@ -519,7 +519,7 @@ function updateSelectionStatus() {
   elements.copySelection.textContent = state.copyingSelection ? "复制中…" : "复制路径";
   elements.selectionHint.textContent = !referenceSessionId ? "此页可浏览素材；请让 AI 助手为当前任务打开参考篮。"
     : state.selectionError || (unavailable ? "有参考图已变化或不可用，请移除后重新选择。"
-      : entries.length ? "回到当前对话，说“使用选中的参考图”。编号对应左侧顺序。" : "点击图片上的 ＋，组合你的下一组参考。");
+      : entries.length ? "回到当前对话，说“使用选中的参考图”。编号对应左侧顺序。" : "点图片上的「选择」，组合你的下一组参考。");
   elements.selectionHint.classList.toggle("is-error", Boolean(state.selectionError) || unavailable);
   elements.referenceTray.setAttribute("aria-busy", String(state.selectionPending > 0));
 }

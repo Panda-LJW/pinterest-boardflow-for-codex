@@ -1,14 +1,19 @@
 :root {
   color-scheme:light dark;
-  --paper:#faf9f7;
+  --paper:#fff;
   --surface:#fff;
-  --soft:#f0efeb;
-  --ink:#242421;
-  --muted:#808079;
-  --line:#e5e4de;
-  --line-strong:#c7c7bf;
-  --accent:#df1836;
-  --accent-soft:#fff0f2;
+  --soft:#efefef;
+  --chip:#e9e9e9;
+  --chip-hover:#dadada;
+  --ink:#111;
+  --muted:#767676;
+  --line:#e9e9e9;
+  --line-strong:#cdcdcd;
+  --accent:#e60023;
+  --accent-strong:#ad081b;
+  --accent-soft:#ffe9ec;
+  --focus-ring:#0074e859;
+  --pin-radius:16px;
   --success:#247452;
   --warning:#9a681a;
   --danger:#b42331;
@@ -77,8 +82,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visi
   top:0;
   z-index:30;
   padding:18px 16px 12px;
-  background:var(--paper);
-  border-bottom:1px solid var(--line)
+  background:var(--paper)
 }
 .title-row,.brand-lockup,.toolbar,.navigation-row,.tabs,.browse-tools,.results-row,.tray-header,.tray-label,.tray-actions,.preview-header,.preview-footer,.preview-actions {
   display:flex;
@@ -104,15 +108,15 @@ button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visi
 }
 .brand-lockup h1 {
   margin:0;
-  font-size:15px;
+  font-size:16px;
   font-weight:700;
-  letter-spacing:-.45px
+  letter-spacing:-.3px
 }
 .eyebrow {
   margin:3px 0 0;
   color:var(--muted);
-  font-size:10px;
-  letter-spacing:.3px
+  font-size:11px;
+  letter-spacing:.2px
 }
 .toolbar {
   gap:2px
@@ -120,16 +124,16 @@ button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visi
 .icon-button {
   display:grid;
   place-items:center;
-  width:34px;
-  height:34px;
+  width:36px;
+  height:36px;
   padding:6px;
   border:0;
-  border-radius:8px;
+  border-radius:50%;
   background:transparent;
   font-size:20px
 }
 .icon-button:hover {
-  background:var(--soft)
+  background:var(--chip)
 }
 .icon-button svg,.search-field svg {
   width:18px;
@@ -189,55 +193,45 @@ kbd {
 .navigation-row {
   justify-content:space-between;
   gap:6px;
-  margin-top:18px
+  margin-top:14px
 }
 .tabs {
-  gap:18px
+  gap:4px
 }
 .tab {
-  position:relative;
-  min-height:34px;
-  padding:0 0 8px;
+  min-height:36px;
+  padding:0 14px;
   border:0;
+  border-radius:999px;
   background:none;
-  color:var(--muted);
-  font-size:12px;
-  font-weight:650;
+  color:var(--ink);
+  font-size:14px;
+  font-weight:600;
   white-space:nowrap
 }
 .tab span {
-  font-size:10px;
+  font-size:12px;
   font-weight:400;
-  margin-left:3px
+  margin-left:3px;
+  color:var(--muted)
+}
+.tab:hover {
+  background:var(--chip)
 }
 .tab.is-active {
-  color:var(--ink)
+  background:var(--ink);
+  color:var(--surface)
 }
-.tab:after {
-  position:absolute;
-  content:"";
-  bottom:0;
-  left:0;
-  right:0;
-  height:2px;
-  background:var(--accent);
-  border-radius:2px;
-  opacity:0;
-  transform:scaleX(.35);
-  transform-origin:left;
-  transition:transform var(--motion-enter) var(--ease-out),opacity var(--motion-feedback)
-}
-.tab.is-active:after {
-  opacity:1;
-  transform:scaleX(1)
+.tab.is-active span {
+  color:inherit
 }
 .watcher-summary {
   display:flex;
   align-items:center;
   gap:5px;
   white-space:nowrap;
-  margin:0 0 8px;
-  font-size:10px;
+  margin:0;
+  font-size:12px;
   color:var(--muted)
 }
 .watcher-summary:before {
@@ -255,29 +249,32 @@ kbd {
 }
 .browse-tools {
   gap:8px;
-  margin-top:12px
+  margin-top:14px
 }
 .search-field {
   display:flex;
   align-items:center;
-  gap:7px;
+  gap:10px;
   flex:1;
   min-width:0;
-  height:36px;
-  padding:0 10px;
-  background:var(--surface);
-  border:1px solid var(--line);
-  border-radius:8px;
+  height:44px;
+  padding:0 16px;
+  background:var(--chip);
+  border:0;
+  border-radius:999px;
   color:var(--muted);
   transition:border-color var(--motion-feedback),box-shadow var(--motion-feedback)
 }
+.search-field:hover {
+  background:var(--chip-hover)
+}
 .search-field:focus-within {
-  border-color:var(--line-strong);
-  box-shadow:0 0 0 3px var(--accent-soft)
+  background:var(--chip);
+  box-shadow:0 0 0 4px var(--focus-ring)
 }
 .search-field svg {
-  flex:0 0 15px;
-  width:15px
+  flex:0 0 18px;
+  width:18px
 }
 .search-field input {
   width:100%;
@@ -285,7 +282,7 @@ kbd {
   border:0;
   background:none;
   color:var(--ink);
-  font-size:11px;
+  font-size:14px;
   padding:5px 0;
   outline:none
 }
@@ -305,13 +302,17 @@ kbd {
   font-size:17px
 }
 select {
-  height:36px;
-  max-width:94px;
-  padding:0 6px;
-  border:1px solid var(--line);
-  border-radius:8px;
-  background:var(--surface);
-  font-size:10px
+  height:44px;
+  max-width:120px;
+  padding:0 14px;
+  border:0;
+  border-radius:999px;
+  background:var(--chip);
+  font-size:13px;
+  font-weight:600
+}
+select:hover {
+  background:var(--chip-hover)
 }
 .results-row {
   justify-content:space-between;
@@ -322,7 +323,7 @@ select {
 .results-row p {
   margin:0;
   color:var(--muted);
-  font-size:10px
+  font-size:12px
 }
 .board-filter {
   display:flex;
@@ -371,12 +372,12 @@ select {
 }
 .skeleton-grid {
   column-count:var(--masonry-columns);
-  column-gap:12px
+  column-gap:8px
 }
 .masonry {
   display:flex;
   align-items:flex-start;
-  gap:12px
+  gap:8px
 }
 .masonry-column {
   flex:1 1 0;
@@ -386,7 +387,7 @@ select {
   position:relative;
   display:inline-block;
   width:100%;
-  margin:0 0 16px;
+  margin:0 0 8px;
   break-inside:avoid;
   vertical-align:top;
   animation:material-enter var(--motion-enter) var(--ease-out) backwards;
@@ -395,9 +396,24 @@ select {
 .thumb-frame {
   position:relative;
   overflow:hidden;
-  border-radius:10px;
+  border-radius:var(--pin-radius);
   background:var(--soft);
   min-height:120px
+}
+.thumb-frame:after {
+  content:"";
+  position:absolute;
+  inset:0;
+  background:#0000004d;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity var(--motion-feedback)
+}
+.pin-card:hover .thumb-frame:after,.pin-card:has(:focus-visible) .thumb-frame:after {
+  opacity:1
+}
+.is-delete-mode .thumb-frame:after {
+  display:none
 }
 .preview-trigger {
   display:block;
@@ -456,36 +472,35 @@ select {
   animation:shimmer 1.7s infinite
 }
 .pin-card.is-selected .thumb-frame {
-  outline:2px solid var(--accent);
+  outline:3px solid var(--ink);
   outline-offset:2px
 }
+/* Pinterest-style save pill: red to pick, black once it is in the tray. */
 .pin-select {
   position:absolute;
-  top:8px;
-  right:8px;
+  top:10px;
+  right:10px;
+  z-index:2;
   display:grid;
   place-items:center;
-  width:29px;
-  height:29px;
-  padding:0;
-  border:1px solid #ffffffb0;
-  border-radius:50%;
-  background:#ffffffed;
-  color:#292927;
-  font-size:20px;
+  min-width:56px;
+  height:36px;
+  padding:0 14px;
+  border:0;
+  border-radius:999px;
+  background:var(--accent);
+  color:#fff;
+  font-size:13px;
+  font-weight:700;
   line-height:1;
-  box-shadow:0 1px 5px #0001
+  white-space:nowrap
 }
 .pin-select:hover {
-  background:var(--accent-soft);
-  color:var(--accent)
+  background:var(--accent-strong)
 }
 .pin-card.is-selected .pin-select {
-  border-color:var(--accent);
-  background:var(--accent);
-  color:white;
-  font-size:12px;
-  font-weight:700
+  background:#111;
+  color:#fff
 }
 .pin-body {
   display:flex;
@@ -536,8 +551,9 @@ select {
 }
 .pin-check {
   position:absolute;
-  top:8px;
-  left:8px;
+  z-index:2;
+  top:10px;
+  left:10px;
   display:none;
   place-items:center;
   width:26px;
@@ -705,12 +721,12 @@ select {
 }
 .board-covers {
   display:grid;
-  height:132px;
+  height:156px;
   overflow:hidden;
   grid-template-columns:1.5fr 1fr;
   grid-template-rows:1fr 1fr;
-  gap:3px;
-  border-radius:10px;
+  gap:2px;
+  border-radius:var(--pin-radius);
   background:var(--soft)
 }
 .cover {
@@ -743,7 +759,8 @@ select {
   padding-top:10px
 }
 .board-body strong {
-  font-size:12px;
+  font-size:16px;
+  font-weight:700;
   display:block;
   overflow:hidden;
   text-overflow:ellipsis;
@@ -752,12 +769,9 @@ select {
 .board-meta {
   display:flex;
   justify-content:space-between;
-  margin-top:5px;
+  margin-top:4px;
   color:var(--muted);
-  font-size:10px
-}
-.board-card:hover strong {
-  color:var(--accent)
+  font-size:12px
 }
 .load-more-wrap {
   display:grid;
@@ -770,30 +784,28 @@ select {
 }
 .button {
   border:1px solid transparent;
-  border-radius:7px;
-  min-height:32px;
-  padding:7px 12px;
-  font-size:11px;
-  font-weight:600;
+  border-radius:999px;
+  min-height:40px;
+  padding:8px 16px;
+  font-size:13px;
+  font-weight:700;
   white-space:nowrap
 }
 .button.primary {
-  background:var(--ink);
-  color:var(--surface)
+  background:var(--accent);
+  color:#fff
 }
-.button.primary:hover {
-  opacity:.85
+.button.primary:hover:not(:disabled) {
+  background:var(--accent-strong)
 }
 .button.secondary {
-  background:var(--surface);
-  border-color:var(--line)
+  background:var(--chip)
 }
 .button.secondary:hover {
-  border-color:var(--line-strong)
+  background:var(--chip-hover)
 }
 .button.danger {
-  background:var(--surface);
-  border-color:var(--line);
+  background:var(--chip);
   color:var(--danger);
   margin-right:auto
 }
@@ -843,7 +855,7 @@ select {
   width:100%;
   height:200px;
   margin-bottom:16px;
-  border-radius:10px;
+  border-radius:var(--pin-radius);
   background:var(--soft);
   animation:pulse 1s infinite alternate
 }
@@ -857,9 +869,8 @@ select {
   bottom:0;
   z-index:40;
   padding:13px 16px calc(12px + env(safe-area-inset-bottom));
-  border-top:1px solid var(--line);
   background:var(--surface);
-  box-shadow:0 -4px 20px #00000004
+  box-shadow:0 -2px 14px #00000014
 }
 .tray-header {
   justify-content:space-between;
@@ -870,15 +881,16 @@ select {
   min-width:0
 }
 .tray-label strong {
-  font-size:12px;
+  font-size:15px;
   white-space:nowrap
 }
 .count-badge {
-  font-size:9px;
+  font-size:11px;
+  font-weight:600;
   color:var(--muted);
-  background:var(--soft);
-  padding:3px 6px;
-  border-radius:4px;
+  background:var(--chip);
+  padding:3px 9px;
+  border-radius:999px;
   white-space:nowrap
 }
 .tray-actions {
@@ -912,8 +924,8 @@ select {
   width:64px;
   height:64px;
   overflow:hidden;
-  border:1px solid var(--line);
-  border-radius:7px;
+  border:0;
+  border-radius:12px;
   background:var(--soft);
   padding:0
 }
@@ -976,7 +988,7 @@ select {
 .selection-hint {
   margin:9px 0 0;
   color:var(--muted);
-  font-size:11px;
+  font-size:12px;
   line-height:1.7
 }
 .selection-hint.is-error {
@@ -987,8 +999,8 @@ select {
   max-height:calc(100dvh - 24px);
   margin:auto;
   padding:0;
-  border:1px solid var(--line);
-  border-radius:14px;
+  border:0;
+  border-radius:28px;
   background:var(--surface);
   color:var(--ink);
   box-shadow:0 24px 100px #0005;
@@ -1042,11 +1054,11 @@ select {
   top:calc(50% - 18px);
   display:grid;
   place-items:center;
-  width:32px;
-  height:38px;
-  padding:0;
-  border:1px solid var(--line);
-  border-radius:6px;
+  width:40px;
+  height:40px;
+  padding:0 0 3px;
+  border:0;
+  border-radius:50%;
   background:var(--surface);
   font-size:26px;
   box-shadow:0 2px 8px #0001
@@ -1087,14 +1099,14 @@ select {
   transform:translate(-50%,8px);
   max-width:calc(100vw - 28px);
   width:max-content;
-  padding:11px 15px;
-  border-radius:9px;
+  padding:11px 18px;
+  border-radius:18px;
   background:var(--ink);
   color:var(--surface);
   box-shadow:0 5px 24px #0002;
   opacity:0;
   pointer-events:none;
-  font-size:11px;
+  font-size:13px;
   line-height:1.6;
   overflow-wrap:anywhere;
   transition:opacity var(--motion-feedback),transform var(--motion-enter) var(--ease-out)
@@ -1128,11 +1140,58 @@ select {
   .preview-trigger:hover img.is-loaded,.board-card:hover img.is-loaded {
     transform:scale(1.025)
   }
-  .pin-select:hover:not(:disabled) {
-    transform:scale(1.08)
-  }
   .pin-select:active:not(:disabled) {
-    transform:scale(.92)
+    transform:scale(.94)
+  }
+}
+@media (hover:hover) and (pointer:fine) {
+  .pin-card:not(.is-selected):not(:hover):not(:has(:focus-visible)) .pin-select {
+    opacity:0
+  }
+  .pin-body {
+    position:absolute;
+    left:0;
+    right:0;
+    bottom:0;
+    z-index:2;
+    align-items:flex-end;
+    gap:8px;
+    padding:10px;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity var(--motion-feedback)
+  }
+  .pin-card:hover .pin-body,.pin-card:has(:focus-visible) .pin-body {
+    opacity:1
+  }
+  .is-delete-mode .pin-body {
+    display:none
+  }
+  .pin-body .pin-title {
+    color:#fff;
+    text-shadow:0 1px 3px #0007
+  }
+  .pin-body .pin-meta {
+    color:#ffffffd9;
+    text-shadow:0 1px 3px #0007
+  }
+  .pin-body .pin-copy {
+    flex:none;
+    width:auto;
+    height:32px;
+    padding:0 12px;
+    border-radius:999px;
+    background:#ffffffeb;
+    color:#111;
+    font-size:12px;
+    font-weight:700;
+    pointer-events:auto
+  }
+  .pin-body .pin-copy:hover {
+    background:#fff
+  }
+  .pin-card.is-copied .pin-body .pin-copy {
+    color:#0a7a3d
   }
 }
 @keyframes pulse {
@@ -1159,13 +1218,13 @@ select {
     --masonry-columns:3
   }
   .skeleton-grid {
-    column-gap:18px
+    column-gap:14px
   }
   .masonry {
-    gap:18px
+    gap:14px
   }
   .pin-card {
-    margin-bottom:20px
+    margin-bottom:14px
   }
   .boards-grid {
     grid-template-columns:repeat(3,minmax(0,1fr));
@@ -1184,11 +1243,8 @@ select {
   .pin-meta {
     font-size:10px
   }
-  .search-field input {
-    font-size:12px
-  }
   .watcher-summary {
-    font-size:11px
+    font-size:12px
   }
 }
 @media(min-width:1000px) {
@@ -1290,23 +1346,26 @@ select {
 }
 @media(prefers-color-scheme:dark) {
   :root {
-    --paper:#1b1c1c;
-    --surface:#232525;
-    --soft:#2c2e2e;
-    --ink:#e7e9e5;
-    --muted:#939892;
-    --line:#363a37;
-    --line-strong:#60675e;
-    --accent:#f25b6d;
-    --accent-soft:#3c272b;
+    --paper:#111;
+    --surface:#1c1c1c;
+    --soft:#262626;
+    --chip:#2b2b2b;
+    --chip-hover:#3a3a3a;
+    --ink:#f1f1f1;
+    --muted:#a5a5a5;
+    --line:#2e2e2e;
+    --line-strong:#4a4a4a;
+    --accent:#e60023;
+    --accent-strong:#ff2a44;
+    --accent-soft:#3c1d22;
+    --focus-ring:#4da3ff66;
     --success:#78bc96;
     --warning:#d0ad70;
     --danger:#eb8792
   }
-  .pin-select {
-    background:#242827ed;
-    color:#fff;
-    border-color:#62665d
+  .pin-card.is-selected .pin-select {
+    background:#f1f1f1;
+    color:#111
   }
   .thumb-skeleton {
     background:linear-gradient(100deg,transparent 25%,#ffffff0a 48%,transparent 70%);
