@@ -44,6 +44,16 @@ export class ReferenceSessions {
     return session;
   }
 
+  // Drops a removed asset from every basket so no task keeps a dead reference.
+  forget(assetId: string) {
+    for (const session of this.sessions.values()) {
+      const entries = session.entries.filter(entry => entry.asset.id !== assetId);
+      if (entries.length === session.entries.length) continue;
+      session.entries = entries;
+      session.revision += 1;
+    }
+  }
+
   async describe(id: string) {
     const session = this.require(id);
     const revision = session.revision;

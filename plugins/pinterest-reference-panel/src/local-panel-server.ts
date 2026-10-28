@@ -10,6 +10,7 @@ import { ReferenceError, ReferenceSessions, REFERENCE_SESSION_PATTERN } from "./
 
 const LOOPBACK_HOST = "127.0.0.1";
 const MAX_JSON_BYTES = 2_048;
+const MAX_TRASH_BATCH = 100;
 const CLOSE_GRACE_MS = 500;
 const ASSET_ID_PATTERN = /^[a-f0-9]{24}$/;
 
@@ -94,13 +95,13 @@ function assertSameOriginMutation(request: IncomingMessage, origin: string) {
   }
 }
 
-async function readJson(request: IncomingMessage) {
+async function readJson(request: IncomingMessage, maxBytes = MAX_JSON_BYTES) {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.byteLength;
-    if (size > MAX_JSON_BYTES) throw new HttpError(413, "请求内容过大");
+    if (size > maxBytes) throw new HttpError(413, "请求内容过大");
     chunks.push(buffer);
   }
   try {
@@ -352,6 +353,34 @@ export async function startLocalPanelServer(options: LocalPanelServerOptions): P
           title: asset.title,
           fileName: asset.sourceRelativePath.split("/").at(-1) ?? asset.title
         });
+        return;
+      }
+      if (method === "POST" && requestUrl.pathname === "/api/trash") {
+        const body = await readJson(request, 4_096);
+        const assetIds = body && typeof body === "object" && !Array.isArray(body) && Object.keys(body).join() === "assetIds"
+          ? (body as { assetIds?: unknown }).assetIds : null;
+        if (!Array.isArray(assetIds) || !assetIds.length || assetIds.length > MAX_TRASH_BATCH) {
+          throw new HttpError(400, `删除请求只能提交 1 到 ${MAX_TRASH_BATCH} 个素材 ID`);
+        }
+        const ids = assetIds.map(parseAssetId);
+        if (new Set(ids).size !== ids.length) throw new HttpError(400, "删除列表包含重复素材");
+        const trashed: Array<{ assetId: string; title: string }> = [];
+        const failed: string[] = [];
+        let missing = 0;
+        // One at a time so a single failure leaves the rest of the batch accounted for.
+        for (const assetId of ids) {
+          // Never echo library paths or command output to the page.
+          const asset = await options.inbox.trashAsset(assetId).catch(() => undefined);
+          if (asset === undefined) failed.push(assetId);
+          else if (asset === null) missing += 1;
+          else {
+            references.forget(assetId);
+            trashed.push({ assetId, title: asset.title });
+          }
+        }
+        if (!trashed.length && failed.length) throw new HttpError(503, "未能移到废纸篓，原图保持不变，请重试");
+        if (!trashed.length) throw new HttpError(404, "素材已不在素材库中，请刷新后重试");
+        sendJson(response, 200, { status: "trashed", trashed, failed, missing, ...options.inbox.getSummary() });
         return;
       }
 

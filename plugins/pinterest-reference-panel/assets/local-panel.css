@@ -534,6 +534,154 @@ select {
 .pin-copy:hover {
   background:var(--soft)
 }
+.pin-check {
+  position:absolute;
+  top:8px;
+  left:8px;
+  display:none;
+  place-items:center;
+  width:26px;
+  height:26px;
+  border:2px solid #fff;
+  border-radius:50%;
+  background:#00000033;
+  color:#fff;
+  font-size:12px;
+  font-weight:700;
+  box-shadow:0 1px 5px #0003;
+  pointer-events:none
+}
+.is-delete-mode .pin-check {
+  display:grid
+}
+.is-delete-mode .pin-select {
+  display:none
+}
+.pin-card.is-picked .pin-check {
+  border-color:var(--danger);
+  background:var(--danger)
+}
+.pin-card.is-picked .thumb-frame {
+  outline:2px solid var(--danger);
+  outline-offset:2px
+}
+.pin-card.is-picked .thumb-frame img.is-loaded {
+  opacity:.82
+}
+.is-delete-mode .app-shell {
+  padding-bottom:180px
+}
+.is-delete-mode .toast {
+  bottom:170px
+}
+.exit-delete {
+  padding:0 10px;
+  font-weight:600
+}
+.delete-stack {
+  position:fixed;
+  right:16px;
+  bottom:calc(16px + env(safe-area-inset-bottom));
+  z-index:45;
+  display:flex;
+  justify-content:flex-end;
+  max-width:calc(100vw - 32px)
+}
+.stack-pile {
+  position:relative;
+  width:132px;
+  height:124px;
+  padding:0;
+  border:0;
+  background:none
+}
+.stack-pile .stack-thumb {
+  position:absolute;
+  top:6px;
+  left:calc(var(--layer) * 24px);
+  z-index:calc(3 - var(--layer));
+  width:82px;
+  height:112px;
+  transform:scale(calc(1 - var(--layer) * .07));
+  transform-origin:left center;
+  box-shadow:0 6px 18px #00000024
+}
+.stack-thumb {
+  display:block;
+  overflow:hidden;
+  border:1px solid var(--line);
+  border-radius:9px;
+  background:var(--soft)
+}
+.stack-thumb img {
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:cover
+}
+.stack-count {
+  position:absolute;
+  top:-4px;
+  left:-8px;
+  z-index:5;
+  display:grid;
+  place-items:center;
+  min-width:24px;
+  height:24px;
+  padding:0 7px;
+  border-radius:12px;
+  background:var(--danger);
+  color:#fff;
+  font-size:12px;
+  font-weight:700;
+  box-shadow:0 2px 8px #0003
+}
+.stack-strip {
+  display:flex;
+  align-items:flex-end;
+  gap:12px;
+  min-width:0;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:var(--surface);
+  box-shadow:0 10px 32px #00000024
+}
+.delete-stack.is-closing .stack-strip {
+  position:absolute;
+  right:0;
+  bottom:0;
+  z-index:1;
+  pointer-events:none
+}
+.stack-list {
+  display:flex;
+  gap:10px;
+  min-width:0;
+  overflow-x:auto;
+  margin:0;
+  padding:6px 6px 4px 2px;
+  list-style:none;
+  scrollbar-width:thin
+}
+.stack-item {
+  position:relative;
+  flex:0 0 64px
+}
+.stack-thumb.is-flat {
+  position:relative;
+  width:64px;
+  height:84px
+}
+.stack-actions {
+  display:flex;
+  flex:none;
+  flex-direction:column;
+  gap:6px
+}
+.stack-actions .button.danger {
+  margin-right:0
+}
 .pin-card.is-copied .pin-copy {
   color:var(--success)
 }
@@ -642,6 +790,20 @@ select {
 }
 .button.secondary:hover {
   border-color:var(--line-strong)
+}
+.button.danger {
+  background:var(--surface);
+  border-color:var(--line);
+  color:var(--danger);
+  margin-right:auto
+}
+.button.danger:hover {
+  border-color:var(--danger)
+}
+.button.danger.is-armed {
+  background:var(--danger);
+  border-color:var(--danger);
+  color:var(--surface)
 }
 .load-more {
   min-width:140px

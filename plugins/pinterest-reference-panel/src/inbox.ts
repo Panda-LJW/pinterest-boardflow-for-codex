@@ -69,11 +69,14 @@ export type InboxPageWithThumbnails = {
   thumbnailErrors: Record<string, string>;
 };
 
+type TrashWriter = (filePath: string) => Promise<void>;
+
 type InboxServiceOptions = {
   inboxRoot?: string;
   stagingRoot?: string;
   cacheRoot?: string;
   reconcileIntervalMs?: number;
+  trashFile?: TrashWriter;
 };
 
 export type InboxListOptions = {
@@ -251,6 +254,12 @@ async function isStableFile(filePath: string) {
   return settled.isFile() && initial.size === settled.size && initial.mtimeMs === settled.mtimeMs;
 }
 
+// Finder's Trash keeps "Put Back", so a deleted reference can still be recovered.
+export async function moveToMacTrash(filePath: string) {
+  if (process.platform !== "darwin" || !existsSync("/usr/bin/trash")) throw new Error("当前系统没有可用的 macOS 废纸篓命令");
+  await execFileAsync("/usr/bin/trash", [filePath], { timeout: 15_000 });
+}
+
 async function mapWithConcurrency<T, R>(values: T[], concurrency: number, mapper: (value: T) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(values.length);
   let nextIndex = 0;
@@ -270,6 +279,7 @@ export class InboxService {
   readonly stagingRoot: string;
   readonly cacheRoot: string;
   private readonly reconcileIntervalMs: number;
+  private readonly trashFile: TrashWriter;
   private assets = new Map<string, InboxAsset>();
   private dimensions = new Map<string, ImageDimensions | null>();
   private version = 0;
@@ -300,6 +310,7 @@ export class InboxService {
     this.stagingRoot = resolve(options.stagingRoot ?? process.env.PINTEREST_INBOX_STAGING_DIR ?? (configuredInbox ? this.inboxRoot : join(homedir(), "Downloads", "PinterestInbox")));
     this.cacheRoot = resolve(options.cacheRoot ?? join(homedir(), "Library", "Caches", "pinterest-reference-panel", "thumbnails"));
     this.reconcileIntervalMs = options.reconcileIntervalMs ?? RECONCILE_INTERVAL_MS;
+    this.trashFile = options.trashFile ?? moveToMacTrash;
   }
 
   async start() {
@@ -503,6 +514,19 @@ export class InboxService {
     } catch {
       return null;
     }
+  }
+
+  // Moves the original to the Trash instead of unlinking it; returns null when
+  // the asset is no longer indexed inside the library.
+  async trashAsset(assetId: string) {
+    const asset = await this.resolveAsset(assetId);
+    if (!asset) return null;
+    await this.trashFile(asset.sourcePath);
+    if (existsSync(asset.sourcePath)) throw new Error("原图仍在素材库中，未能移到废纸篓");
+    if (this.assets.delete(asset.id)) this.version += 1;
+    this.dimensions.delete(asset.signature);
+    await rm(join(this.cacheRoot, `${asset.id}-${asset.signature}.jpg`), { force: true });
+    return asset;
   }
 
   private publicTransferSummary(): TransferSummary {

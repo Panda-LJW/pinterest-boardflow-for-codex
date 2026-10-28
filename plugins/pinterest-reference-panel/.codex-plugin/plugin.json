@@ -1,6 +1,6 @@
 {
   "name": "pinterest-reference-panel",
-  "version": "0.4.1+codex.20260909154410",
+  "version": "0.4.2+codex.20261028120000",
   "description": "Pinterest BoardFlow for Codex combines a Pinterest downloader with a local Board-style masonry dashboard and task-scoped visual references.",
   "author": {
     "name": "Superpanda"
