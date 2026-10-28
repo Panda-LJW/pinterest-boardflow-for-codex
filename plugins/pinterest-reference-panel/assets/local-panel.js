@@ -743,12 +743,50 @@ function renderDeleteStack() {
   elements.deleteStack.inert = state.bulkTrashing;
   hydrateThumbnails();
 }
+// Collapsing lifts the strip out of flow so the pile can fade in beneath it
+// while the cards slide back into the front of the pile.
+let stackCloseToken = 0;
+function finishStackClose(token) {
+  if (token !== stackCloseToken) return;
+  // The fades fill forwards, so they outlive playMotion's bookkeeping.
+  for (const node of [elements.stackStrip, elements.stackStrip.querySelector(".stack-actions")]) for (const animation of node.getAnimations()) animation.cancel();
+  elements.deleteStack.classList.remove("is-closing");
+  elements.stackStrip.style.width = "";
+  elements.stackStrip.hidden = !state.stackOpen;
+}
+function collapseStack() {
+  const token = ++stackCloseToken;
+  const strip = elements.stackStrip, scroll = elements.stackList.scrollLeft;
+  const width = strip.hidden ? 0 : strip.getBoundingClientRect().width;
+  renderDeleteStack();
+  elements.stackPile.focus({ preventScroll: true });
+  if (!width || !state.deletePicks.length || reducedMotion?.matches) { finishStackClose(token); return; }
+  strip.style.width = `${width}px`; strip.hidden = false;
+  elements.deleteStack.classList.add("is-closing");
+  elements.stackList.scrollLeft = scroll;
+  // Land each card on the front pile card (82×112 at 0,6 inside the pile).
+  const pile = elements.stackPile.getBoundingClientRect();
+  const items = [...elements.stackList.children];
+  items.forEach((node, index) => {
+    const box = node.getBoundingClientRect();
+    const dx = pile.left + 41 - (box.left + box.width / 2), dy = pile.top + 62 - (box.top + box.height / 2);
+    playMotion(node, [{ opacity: 1, transform: "none" }, { opacity: 1, offset: .55 }, { opacity: 0, transform: `translate(${dx}px, ${dy}px) scale(1.25)` }], { duration: 300, delay: Math.min(index, 8) * 16, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" });
+  });
+  playMotion(strip.querySelector(".stack-actions"), [{ opacity: 1 }, { opacity: 0 }], { duration: 120, fill: "forwards" });
+  [...elements.stackPile.children].forEach((node, index) => {
+    playMotion(node, [{ opacity: 0, translate: "-12px 4px" }, { opacity: 1, translate: "0 0" }], { duration: 260, delay: 140 + index * 30, fill: "backwards" });
+  });
+  const fade = playMotion(strip, [{ opacity: 1 }, { opacity: 1, offset: .5 }, { opacity: 0 }], { duration: 300 + Math.min(items.length - 1, 8) * 16, easing: "ease-out", fill: "forwards" });
+  if (!fade) { finishStackClose(token); return; }
+  fade.finished.then(() => finishStackClose(token), () => finishStackClose(token));
+}
 function setStackOpen(open) {
   state.stackOpen = open && state.deletePicks.length > 0;
   disarmBulkTrash(false);
+  if (!state.stackOpen) { collapseStack(); return; }
+  finishStackClose(++stackCloseToken);
   const anchor = elements.deleteStack.getBoundingClientRect().right;
   renderDeleteStack();
-  if (!state.stackOpen) { elements.stackPile.focus({ preventScroll: true }); return; }
   elements.stackList.scrollLeft = 0;
   // Fan out from the pile toward the left; the nearest card lands first.
   const items = [...elements.stackList.children];

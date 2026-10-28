@@ -647,6 +647,13 @@ select {
   background:var(--surface);
   box-shadow:0 10px 32px #00000024
 }
+.delete-stack.is-closing .stack-strip {
+  position:absolute;
+  right:0;
+  bottom:0;
+  z-index:1;
+  pointer-events:none
+}
 .stack-list {
   display:flex;
   gap:10px;
