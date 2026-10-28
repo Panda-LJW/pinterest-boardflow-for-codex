@@ -553,7 +553,7 @@
         if (initialMeta?.stagingPath) state.stagingPath = initialMeta.stagingPath;
         if (window.openai?.toolOutput) acceptResult(window.openai.toolOutput);
         render();
-        request("ui/initialize", { appInfo: { name: "Pinterest BoardFlow", version: "0.4.1" }, appCapabilities: {} }).catch(() => {});
+        request("ui/initialize", { appInfo: { name: "Pinterest BoardFlow", version: "0.4.2" }, appCapabilities: {} }).catch(() => {});
         setInterval(() => void poll(), 2000);
       })();
     </script>

@@ -15,8 +15,10 @@
       <div class="title-row">
         <div class="brand-lockup"><span class="brand-mark" aria-hidden="true">P</span><div><h1>Pinterest BoardFlow</h1><p class="eyebrow">Board 瀑布流 · AI 视觉参考</p></div></div>
         <div class="toolbar">
+          <button id="deleteModeButton" class="icon-button" type="button" aria-label="选择删除" title="选择删除"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button>
+          <button id="exitDeleteMode" class="text-button exit-delete" type="button" hidden>完成</button>
           <button id="refreshButton" class="icon-button" type="button" aria-label="立即刷新" title="立即刷新"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.35 5.65M20 4v7h-7"/></svg></button>
-          <details class="help-menu"><summary class="icon-button" aria-label="使用说明" title="使用说明">?</summary><div class="help-popover"><strong>从灵感到参考</strong><ol><li>点击图片放大查看。</li><li>用 ＋ 加入参考篮，按需调整顺序。</li><li>回到打开此面板的对话，说“使用选中的参考图”。</li></ol><p>也可复制路径，再按 <kbd>⌘V</kbd> 粘贴到对话。原素材保持不变。</p><p class="help-muted">参考篮在当前插件会话内保存。插件重启后，请重新选图。</p></div></details>
+          <details class="help-menu"><summary class="icon-button" aria-label="使用说明" title="使用说明">?</summary><div class="help-popover"><strong>从灵感到参考</strong><ol><li>点击图片放大查看。</li><li>用 ＋ 加入参考篮，按需调整顺序。</li><li>回到打开此面板的对话，说“使用选中的参考图”。</li></ol><p>也可复制路径，再按 <kbd>⌘V</kbd> 粘贴到对话。原素材保持不变。</p><p>点右上角垃圾桶进入选择删除，点图片多选，右下角的图片堆展开后即可删除；大图预览里也能直接删除。图片会移到废纸篓，可在访达中放回。</p><p class="help-muted">参考篮在当前插件会话内保存。插件重启后，请重新选图。</p></div></details>
         </div>
       </div>
       <div class="navigation-row"><nav class="tabs" aria-label="素材视图"><button id="pinsTab" class="tab is-active" type="button" aria-pressed="true">图片 <span>Pins</span></button><button id="boardsTab" class="tab" type="button" aria-pressed="false">图版 <span>Boards</span></button></nav><p id="watcherSummary" class="watcher-summary">连接中</p></div>
@@ -35,10 +37,17 @@
     <ol id="selectionList" class="selection-list" aria-label="参考图顺序" hidden></ol>
     <p id="selectionHint" class="selection-hint">点击图片上的 ＋，组合你的下一组参考。</p>
   </footer>
+  <div id="deleteStack" class="delete-stack" hidden>
+    <div id="stackStrip" class="stack-strip" hidden>
+      <ol id="stackList" class="stack-list" aria-label="待删除图片顺序"></ol>
+      <div class="stack-actions"><button id="stackDelete" class="button danger" type="button">删除</button><button id="stackCollapse" class="text-button" type="button">收起</button></div>
+    </div>
+    <button id="stackPile" class="stack-pile" type="button"></button>
+  </div>
   <dialog id="previewDialog" class="preview-dialog" aria-labelledby="previewTitle">
     <div class="preview-header"><span id="previewPosition" class="eyebrow">原图预览</span><button id="closePreview" class="icon-button" type="button" aria-label="关闭预览" autofocus>×</button></div>
     <div id="previewStage" class="preview-stage"><p id="previewMessage" role="status">正在读取原图…</p><img id="previewImage" alt="" hidden><button id="previousPreview" class="preview-nav previous" type="button" aria-label="上一张">‹</button><button id="nextPreview" class="preview-nav next" type="button" aria-label="下一张">›</button></div>
-    <div class="preview-footer"><div class="preview-info"><h2 id="previewTitle"></h2><p id="previewMeta"></p><p id="previewFeedback" role="status"></p></div><div class="preview-actions"><button id="previewCopy" class="button secondary" type="button">复制路径</button><button id="previewSelect" class="button primary" type="button">加入参考</button></div></div>
+    <div class="preview-footer"><div class="preview-info"><h2 id="previewTitle"></h2><p id="previewMeta"></p><p id="previewFeedback" role="status"></p></div><div class="preview-actions"><button id="previewDelete" class="button danger" type="button" title="移到废纸篓（Delete）">删除</button><button id="previewCopy" class="button secondary" type="button">复制路径</button><button id="previewSelect" class="button primary" type="button">加入参考</button></div></div>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   <script type="module" src="/local-panel.js"></script>

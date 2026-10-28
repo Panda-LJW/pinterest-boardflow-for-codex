@@ -21604,6 +21604,10 @@ async function isStableFile(filePath) {
   const settled = await stat(filePath);
   return settled.isFile() && initial.size === settled.size && initial.mtimeMs === settled.mtimeMs;
 }
+async function moveToMacTrash(filePath) {
+  if (process.platform !== "darwin" || !existsSync("/usr/bin/trash")) throw new Error("\u5F53\u524D\u7CFB\u7EDF\u6CA1\u6709\u53EF\u7528\u7684 macOS \u5E9F\u7EB8\u7BD3\u547D\u4EE4");
+  await execFileAsync("/usr/bin/trash", [filePath], { timeout: 15e3 });
+}
 async function mapWithConcurrency(values, concurrency, mapper) {
   const results = new Array(values.length);
   let nextIndex = 0;
@@ -21622,6 +21626,7 @@ var InboxService = class {
   stagingRoot;
   cacheRoot;
   reconcileIntervalMs;
+  trashFile;
   assets = /* @__PURE__ */ new Map();
   dimensions = /* @__PURE__ */ new Map();
   version = 0;
@@ -21651,6 +21656,7 @@ var InboxService = class {
     this.stagingRoot = resolve(options.stagingRoot ?? process.env.PINTEREST_INBOX_STAGING_DIR ?? (configuredInbox ? this.inboxRoot : join(homedir(), "Downloads", "PinterestInbox")));
     this.cacheRoot = resolve(options.cacheRoot ?? join(homedir(), "Library", "Caches", "pinterest-reference-panel", "thumbnails"));
     this.reconcileIntervalMs = options.reconcileIntervalMs ?? RECONCILE_INTERVAL_MS;
+    this.trashFile = options.trashFile ?? moveToMacTrash;
   }
   async start() {
     if (this.watcherStatus !== "stopped") return;
@@ -21852,6 +21858,18 @@ var InboxService = class {
       return null;
     }
   }
+  // Moves the original to the Trash instead of unlinking it; returns null when
+  // the asset is no longer indexed inside the library.
+  async trashAsset(assetId) {
+    const asset = await this.resolveAsset(assetId);
+    if (!asset) return null;
+    await this.trashFile(asset.sourcePath);
+    if (existsSync(asset.sourcePath)) throw new Error("\u539F\u56FE\u4ECD\u5728\u7D20\u6750\u5E93\u4E2D\uFF0C\u672A\u80FD\u79FB\u5230\u5E9F\u7EB8\u7BD3");
+    if (this.assets.delete(asset.id)) this.version += 1;
+    this.dimensions.delete(asset.signature);
+    await rm(join(this.cacheRoot, `${asset.id}-${asset.signature}.jpg`), { force: true });
+    return asset;
+  }
   publicTransferSummary() {
     return {
       moved: this.transfer.moved,
@@ -22034,6 +22052,15 @@ var ReferenceSessions = class {
     if (!session) throw new ReferenceError2(410, "\u53C2\u8003\u4F1A\u8BDD\u5DF2\u5931\u6548\uFF0C\u8BF7\u8BA9 AI \u52A9\u624B\u91CD\u65B0\u6253\u5F00\u53C2\u8003\u7BEE");
     return session;
   }
+  // Drops a removed asset from every basket so no task keeps a dead reference.
+  forget(assetId) {
+    for (const session of this.sessions.values()) {
+      const entries = session.entries.filter((entry) => entry.asset.id !== assetId);
+      if (entries.length === session.entries.length) continue;
+      session.entries = entries;
+      session.revision += 1;
+    }
+  }
   async describe(id) {
     const session = this.require(id);
     const revision = session.revision;
@@ -22094,6 +22121,7 @@ var ReferenceSessions = class {
 // src/local-panel-server.ts
 var LOOPBACK_HOST = "127.0.0.1";
 var MAX_JSON_BYTES = 2048;
+var MAX_TRASH_BATCH = 100;
 var CLOSE_GRACE_MS = 500;
 var ASSET_ID_PATTERN = /^[a-f0-9]{24}$/;
 var HttpError = class extends Error {
@@ -22154,13 +22182,13 @@ function assertSameOriginMutation(request, origin) {
     throw new HttpError(415, "\u8BF7\u6C42\u5FC5\u987B\u4F7F\u7528 JSON");
   }
 }
-async function readJson(request) {
+async function readJson(request, maxBytes = MAX_JSON_BYTES) {
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.byteLength;
-    if (size > MAX_JSON_BYTES) throw new HttpError(413, "\u8BF7\u6C42\u5185\u5BB9\u8FC7\u5927");
+    if (size > maxBytes) throw new HttpError(413, "\u8BF7\u6C42\u5185\u5BB9\u8FC7\u5927");
     chunks.push(buffer);
   }
   try {
@@ -22401,6 +22429,31 @@ async function startLocalPanelServer(options) {
           title: asset.title,
           fileName: asset.sourceRelativePath.split("/").at(-1) ?? asset.title
         });
+        return;
+      }
+      if (method === "POST" && requestUrl.pathname === "/api/trash") {
+        const body = await readJson(request, 4096);
+        const assetIds = body && typeof body === "object" && !Array.isArray(body) && Object.keys(body).join() === "assetIds" ? body.assetIds : null;
+        if (!Array.isArray(assetIds) || !assetIds.length || assetIds.length > MAX_TRASH_BATCH) {
+          throw new HttpError(400, `\u5220\u9664\u8BF7\u6C42\u53EA\u80FD\u63D0\u4EA4 1 \u5230 ${MAX_TRASH_BATCH} \u4E2A\u7D20\u6750 ID`);
+        }
+        const ids = assetIds.map(parseAssetId);
+        if (new Set(ids).size !== ids.length) throw new HttpError(400, "\u5220\u9664\u5217\u8868\u5305\u542B\u91CD\u590D\u7D20\u6750");
+        const trashed = [];
+        const failed = [];
+        let missing = 0;
+        for (const assetId of ids) {
+          const asset = await options.inbox.trashAsset(assetId).catch(() => void 0);
+          if (asset === void 0) failed.push(assetId);
+          else if (asset === null) missing += 1;
+          else {
+            references2.forget(assetId);
+            trashed.push({ assetId, title: asset.title });
+          }
+        }
+        if (!trashed.length && failed.length) throw new HttpError(503, "\u672A\u80FD\u79FB\u5230\u5E9F\u7EB8\u7BD3\uFF0C\u539F\u56FE\u4FDD\u6301\u4E0D\u53D8\uFF0C\u8BF7\u91CD\u8BD5");
+        if (!trashed.length) throw new HttpError(404, "\u7D20\u6750\u5DF2\u4E0D\u5728\u7D20\u6750\u5E93\u4E2D\uFF0C\u8BF7\u5237\u65B0\u540E\u91CD\u8BD5");
+        sendJson(response, 200, { status: "trashed", trashed, failed, missing, ...options.inbox.getSummary() });
         return;
       }
       throw new HttpError(404, "\u63A5\u53E3\u4E0D\u5B58\u5728");
@@ -22647,7 +22700,7 @@ function reportInternalError(context, error2) {
 `);
 }
 var server = new McpServer(
-  { name: "pinterest-reference-panel", version: "0.4.1" },
+  { name: "pinterest-reference-panel", version: "0.4.2" },
   {
     capabilities: { resources: {}, tools: {} },
     instructions: "When Pinterest BoardFlow (formerly Pinterest Inbox) is selected or mentioned, an unqualified request to open it (including \u6253\u5F00\u9879\u76EE) means launch its running Board-style masonry material panel, unless the user explicitly asks for source code, documentation or project management. Call open_pinterest_inbox_web, then actually open the complete returned URL in the host's visible browser for THIS task: in Codex call open_in_codex with target {type: 'browser', url} and placement 'right'; in the Claude desktop app call the built-in browser preview_start with that url; without an in-app browser run `open '<url>'`. Discover deferred tools when needed. Opening README or locating a repository does not fulfill this request. Do not use desktop automation on the host app or start a second InboxService as a workaround. Report opened only after the browser action succeeds; distinguish queued from displayed. Retain the returned referenceSessionId for THIS task. When the user asks to use selected references, call get_pinterest_reference_selection with that exact ID, then read the returned original local image files before visual analysis or generation. Use numbered files in returned order. Never guess a session or read another task's basket. To reopen the same basket pass its referenceSessionId; omitting it creates an empty independent basket. Recheck the returned revision before using references if the user changes selection. Selecting images never sends a message. Do not copy, re-encode or modify originals. Path copying remains an explicit fallback. Never accept arbitrary source URLs or paths."

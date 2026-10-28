@@ -1,6 +1,6 @@
 {
   "name": "pinterest-reference-panel",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "description": "Pinterest BoardFlow for Codex: a local Board-style masonry browser for selecting Pinterest visual references.",
   "type": "module",

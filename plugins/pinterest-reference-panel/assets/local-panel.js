@@ -3,7 +3,8 @@ const referenceSessionId = document.querySelector('meta[name="pinterest-referenc
 const DEFAULT_API_TIMEOUT_MS = 8_000;
 const THUMBNAIL_TIMEOUT_MS = 20_000;
 const REFRESH_TIMEOUT_MS = 120_000;
-const elementIds = ["watcherSummary", "refreshButton", "pinsTab", "boardsTab", "statusBanner", "boardFilter", "content", "loadMoreButton", "toast", "searchInput", "clearSearch", "sortSelect", "browseTools", "resultSummary", "listEnd", "referenceTray", "selectionCount", "selectionStatus", "selectionList", "selectionHint", "clearSelection", "copySelection", "previewDialog", "previewPosition", "closePreview", "previewStage", "previewMessage", "previewImage", "previousPreview", "nextPreview", "previewTitle", "previewMeta", "previewCopy", "previewSelect"];
+const MAX_DELETE_PICKS = 100;
+const elementIds = ["watcherSummary", "refreshButton", "pinsTab", "boardsTab", "statusBanner", "boardFilter", "content", "loadMoreButton", "toast", "searchInput", "clearSearch", "sortSelect", "browseTools", "resultSummary", "listEnd", "referenceTray", "selectionCount", "selectionStatus", "selectionList", "selectionHint", "clearSelection", "copySelection", "previewDialog", "previewPosition", "closePreview", "previewStage", "previewMessage", "previewImage", "previousPreview", "nextPreview", "previewTitle", "previewMeta", "previewCopy", "previewSelect", "previewDelete", "deleteModeButton", "exitDeleteMode", "deleteStack", "stackStrip", "stackList", "stackDelete", "stackCollapse", "stackPile"];
 const elements = Object.fromEntries(elementIds.map(id => [id, document.querySelector(`#${id}`)]));
 const state = {
   tab: "pins", boardId: null, boardTitle: null, query: "", sort: "recent",
@@ -17,6 +18,8 @@ const state = {
   selection: null, selectionError: null, selectionPending: 0, selectionChain: Promise.resolve(), copyingSelection: false,
   previewAsset: null, previewUrl: null, previewGeneration: 0, previewController: null,
   previewClosing: false, previewCloseToken: 0,
+  trashArmedId: null, trashArmTimer: null, trashingId: null,
+  deleteMode: false, deletePicks: [], stackOpen: false, bulkArmed: false, bulkArmTimer: null, bulkTrashing: false,
   polling: false, pollTimer: null, pollDelay: 2000, toastTimer: null, searchTimer: null
 };
 
@@ -170,7 +173,7 @@ function hydrateThumbnails() {
 async function loadThumbnail(image) {
   if (!image.isConnected) return;
   const assetId = image.dataset.assetId;
-  const frame = image.closest(".thumb-frame, .cover, .selection-thumb");
+  const frame = image.closest(".thumb-frame, .cover, .selection-thumb, .stack-thumb");
   const fail = () => {
     state.thumbnailFailures.add(assetId);
     frame?.classList.add("has-error");
@@ -224,7 +227,8 @@ function updateChrome() {
   elements.content.inert = state.pageLoading && state.dataView !== viewKey();
   elements.loadMoreButton.disabled = state.pageLoading;
   elements.loadMoreButton.textContent = state.pageLoading ? "正在加载…" : "继续加载";
-  elements.resultSummary.textContent = state.initialLoading ? "正在读取素材…"
+  elements.resultSummary.textContent = state.deleteMode && state.tab === "pins" ? `点选要删除的图片 · 已选 ${state.deletePicks.length} 张`
+    : state.initialLoading ? "正在读取素材…"
     : state.pageLoading ? "正在查找…" : state.pageError ? "读取失败，请重试"
       : state.tab === "boards" ? `${visibleBoards().length} 个图版`
         : state.query ? `找到 ${state.total} 张图片` : `${state.boardTitle || "全部素材"} · ${state.total} 张`;
@@ -286,9 +290,9 @@ function pinCard(asset) {
     frame.classList.add("has-ratio");
     frame.style.setProperty("--thumb-ratio", `${asset.width} / ${asset.height}`);
   }
-  const preview = button("preview-trigger", null, `预览：${asset.title}`, () => void openPreview(asset));
+  const preview = button("preview-trigger", null, `预览：${asset.title}`, () => state.deleteMode ? togglePick(asset) : void openPreview(asset));
   preview.append(thumbnailImage(asset.id, asset.title), element("span", "thumb-skeleton"));
-  frame.append(preview, button("pin-select", "+", `加入参考：${asset.title}`, () => toggleReference(asset)));
+  frame.append(preview, button("pin-select", "+", `加入参考：${asset.title}`, () => toggleReference(asset)), element("span", "pin-check"));
   const body = element("div", "pin-body");
   const copy = element("div", "pin-copy-text");
   const title = element("p", "pin-title", asset.title); title.title = asset.title;
@@ -297,7 +301,7 @@ function pinCard(asset) {
   copy.append(title, meta);
   body.append(copy, button("pin-copy", "复制", `复制路径：${asset.title}`, () => void copyAsset(asset)));
   card.append(frame, body);
-  applyCopyState(card, asset.id); applySelectionState(card);
+  applyCopyState(card, asset.id); applySelectionState(card); applyPickState(card);
   return card;
 }
 function visibleBoards() {
@@ -617,6 +621,11 @@ async function copySelection() {
 }
 function updatePreviewControls() {
   if (!state.previewAsset) return;
+  const armed = state.trashArmedId === state.previewAsset.id, trashing = state.trashingId === state.previewAsset.id;
+  elements.previewDelete.textContent = trashing ? "删除中…" : armed ? "确认删除？" : "删除";
+  elements.previewDelete.classList.toggle("is-armed", armed);
+  elements.previewDelete.disabled = Boolean(state.trashingId) || state.bulkTrashing;
+  elements.previewDelete.setAttribute("aria-busy", String(trashing));
   const index = selectedIndex(state.previewAsset.id);
   elements.previewSelect.textContent = index >= 0 ? `已选为参考 ${index + 1} · 移除` : "加入参考";
   elements.previewSelect.setAttribute("aria-pressed", String(index >= 0));
@@ -626,12 +635,166 @@ function updatePreviewControls() {
   elements.nextPreview.disabled = position < 0 || position >= state.assets.length - 1;
   elements.previewPosition.textContent = position >= 0 ? `原图预览 · ${position + 1} / ${state.assets.length} 张已加载` : "参考图 · 原图预览";
 }
+function disarmTrash() {
+  clearTimeout(state.trashArmTimer);
+  state.trashArmedId = null;
+  updatePreviewControls();
+}
+// Two presses on the same image: the first arms, the second moves it to the Trash.
+async function trashPreviewAsset() {
+  const asset = state.previewAsset;
+  if (!asset || state.trashingId || state.bulkTrashing) return;
+  if (state.trashArmedId !== asset.id) {
+    clearTimeout(state.trashArmTimer);
+    state.trashArmedId = asset.id;
+    state.trashArmTimer = setTimeout(disarmTrash, 4000);
+    updatePreviewControls(); pulseControl(elements.previewDelete);
+    return;
+  }
+  clearTimeout(state.trashArmTimer);
+  state.trashArmedId = null; state.trashingId = asset.id; updatePreviewControls();
+  // Pick the follow-up image now: a status poll may reload the list before the response.
+  const position = state.assets.findIndex(item => item.id === asset.id);
+  const neighbors = position < 0 ? [] : [...state.assets.slice(position + 1), ...state.assets.slice(0, position).reverse()].map(item => item.id);
+  try {
+    const result = await api("/api/trash", { method: "POST", body: { assetIds: [asset.id] } });
+    if (result.status !== "trashed" || result.trashed?.[0]?.assetId !== asset.id) throw new Error("未收到删除确认，请刷新后查看");
+    state.trashingId = null;
+    forgetTrashed(new Set([asset.id]), result.total);
+    const next = neighbors.map(id => state.assets.find(item => item.id === id)).find(Boolean);
+    showToast(`已移到废纸篓：${result.trashed[0].title}`);
+    if (state.previewAsset?.id === asset.id) {
+      if (next) void openPreview(next, 1); else void dismissPreview();
+    }
+  } catch (error) { showToast(error.message || "删除失败，请重试", true); }
+  finally { state.trashingId = null; updatePreviewControls(); }
+}
+function forgetTrashed(removed, total) {
+  const before = state.assets.length;
+  state.assets = state.assets.filter(item => !removed.has(item.id));
+  state.total = Math.max(0, state.total - (before - state.assets.length));
+  state.libraryTotal = Number.isInteger(total) ? total : Math.max(0, state.libraryTotal - removed.size);
+  state.deletePicks = state.deletePicks.filter(item => !removed.has(item.id));
+  renderContent(); renderDeleteStack();
+  if (referenceSessionId) void loadSelection();
+}
+// Select-to-delete mode: picks keep their click order, which is also the
+// left-to-right order of the expanded stack.
+function pickIndex(assetId) { return state.deletePicks.findIndex(asset => asset.id === assetId); }
+function applyPickState(card) {
+  const index = pickIndex(card.dataset.assetId);
+  card.classList.toggle("is-picked", index >= 0);
+  card.querySelector(".pin-check").textContent = index >= 0 ? String(index + 1) : "";
+}
+function setDeleteMode(enabled) {
+  if (state.bulkTrashing) return;
+  state.deleteMode = enabled; state.deletePicks = []; state.stackOpen = false;
+  disarmBulkTrash(false);
+  document.body.classList.toggle("is-delete-mode", enabled);
+  elements.deleteModeButton.hidden = enabled; elements.exitDeleteMode.hidden = !enabled;
+  elements.referenceTray.hidden = enabled;
+  renderDeleteStack(); updateChrome();
+  (enabled ? elements.exitDeleteMode : elements.deleteModeButton).focus({ preventScroll: true });
+}
+function togglePick(asset) {
+  if (state.bulkTrashing) return;
+  const index = pickIndex(asset.id);
+  if (index >= 0) state.deletePicks.splice(index, 1);
+  else if (state.deletePicks.length >= MAX_DELETE_PICKS) { showToast(`一次最多删除 ${MAX_DELETE_PICKS} 张`, true); return; }
+  else state.deletePicks.push(asset);
+  disarmBulkTrash(false);
+  renderDeleteStack(); updateChrome();
+  for (const card of elements.content.querySelectorAll(".pin-card")) if (card.dataset.assetId === asset.id) pulseControl(card.querySelector(".pin-check"));
+  pulseControl(elements.stackPile.querySelector(".stack-count"));
+}
+function stackThumb(asset, className) {
+  const frame = element("span", className);
+  frame.append(thumbnailImage(asset.id, asset.title));
+  return frame;
+}
+function renderDeleteStack() {
+  for (const card of elements.content.querySelectorAll(".pin-card")) applyPickState(card);
+  const picks = state.deletePicks;
+  if (!picks.length) state.stackOpen = false;
+  elements.deleteStack.hidden = !state.deleteMode || !picks.length;
+  elements.deleteStack.classList.toggle("is-open", state.stackOpen);
+  elements.stackPile.hidden = state.stackOpen;
+  elements.stackStrip.hidden = !state.stackOpen;
+  // Collapsed: the first pick sits in front, later picks peek out to its right.
+  elements.stackPile.replaceChildren(...picks.slice(0, 3).map((asset, index) => {
+    const layer = stackThumb(asset, "stack-thumb");
+    layer.style.setProperty("--layer", String(index));
+    return layer;
+  }), element("span", "stack-count", String(picks.length)));
+  elements.stackPile.setAttribute("aria-label", `已选 ${picks.length} 张待删除，点击展开`);
+  elements.stackPile.title = "展开待删除图片";
+  elements.stackList.replaceChildren(...picks.map((asset, index) => {
+    const item = element("li", "stack-item");
+    item.dataset.assetId = asset.id;
+    const thumb = stackThumb(asset, "stack-thumb is-flat");
+    thumb.append(element("span", "selection-number", String(index + 1)));
+    item.append(thumb, button("selection-remove", "×", `不删除：${asset.title}`, () => togglePick(asset)));
+    return item;
+  }));
+  elements.stackDelete.textContent = state.bulkTrashing ? "删除中…" : state.bulkArmed ? `确认删除 ${picks.length} 张？` : `删除 ${picks.length} 张`;
+  elements.stackDelete.classList.toggle("is-armed", state.bulkArmed);
+  elements.stackDelete.disabled = state.bulkTrashing;
+  elements.stackDelete.setAttribute("aria-busy", String(state.bulkTrashing));
+  elements.deleteStack.inert = state.bulkTrashing;
+  hydrateThumbnails();
+}
+function setStackOpen(open) {
+  state.stackOpen = open && state.deletePicks.length > 0;
+  disarmBulkTrash(false);
+  const anchor = elements.deleteStack.getBoundingClientRect().right;
+  renderDeleteStack();
+  if (!state.stackOpen) { elements.stackPile.focus({ preventScroll: true }); return; }
+  elements.stackList.scrollLeft = 0;
+  // Fan out from the pile toward the left; the nearest card lands first.
+  const items = [...elements.stackList.children];
+  items.forEach((node, index) => {
+    const offset = anchor - node.getBoundingClientRect().right;
+    playMotion(node, [{ opacity: 0, transform: `translateX(${offset}px) scale(.85)` }, { opacity: 1, transform: "translateX(0) scale(1)" }], { duration: 280, delay: (items.length - 1 - index) * 22, fill: "backwards" });
+  });
+  playMotion(elements.stackStrip, [{ opacity: 0 }, { opacity: 1 }], { duration: 160 });
+  elements.stackDelete.focus({ preventScroll: true });
+}
+function disarmBulkTrash(render = true) {
+  clearTimeout(state.bulkArmTimer);
+  state.bulkArmed = false;
+  if (render) renderDeleteStack();
+}
+// Same two-press confirmation as the preview button.
+async function trashPicks() {
+  if (!state.deletePicks.length || state.bulkTrashing) return;
+  if (!state.bulkArmed) {
+    state.bulkArmed = true; state.bulkArmTimer = setTimeout(disarmBulkTrash, 4000);
+    renderDeleteStack(); pulseControl(elements.stackDelete);
+    return;
+  }
+  disarmBulkTrash(false);
+  state.bulkTrashing = true; renderDeleteStack();
+  try {
+    const result = await api("/api/trash", { method: "POST", body: { assetIds: state.deletePicks.map(asset => asset.id) }, timeoutMs: REFRESH_TIMEOUT_MS });
+    if (result.status !== "trashed" || !Array.isArray(result.trashed)) throw new Error("未收到删除确认，请刷新后查看");
+    const removed = new Set([...result.trashed.map(item => item.assetId)]);
+    state.bulkTrashing = false;
+    forgetTrashed(removed, result.total);
+    if (result.failed?.length) showToast(`已移到废纸篓 ${removed.size} 张，${result.failed.length} 张未能删除，请重试`, true);
+    else showToast(`已移到废纸篓 ${removed.size} 张 · 可在访达中放回`);
+  } catch (error) { showToast(error.message || "删除失败，请重试", true); }
+  finally {
+    state.bulkTrashing = false;
+    if (state.deleteMode && !state.deletePicks.length) setDeleteMode(false); else renderDeleteStack();
+  }
+}
 async function openPreview(asset, direction = 0) {
   const wasOpen = elements.previewDialog.open;
   state.previewCloseToken += 1; state.previewClosing = false;
   elements.previewDialog.classList.remove("is-closing");
   nodeMotions.get(elements.previewDialog)?.cancel();
   nodeMotions.get(elements.previewImage)?.cancel();
+  if (state.trashArmedId !== asset.id) { clearTimeout(state.trashArmTimer); state.trashArmedId = null; }
   state.previewAsset = asset;
   const generation = ++state.previewGeneration;
   state.previewController?.abort();
@@ -724,14 +887,26 @@ elements.previousPreview.addEventListener("click", () => navigatePreview(-1));
 elements.nextPreview.addEventListener("click", () => navigatePreview(1));
 elements.previewCopy.addEventListener("click", () => { if (state.previewAsset) void copyAsset(state.previewAsset); });
 elements.previewSelect.addEventListener("click", () => { if (state.previewAsset) toggleReference(state.previewAsset); });
+elements.previewDelete.addEventListener("click", () => void trashPreviewAsset());
+elements.deleteModeButton.addEventListener("click", () => setDeleteMode(true));
+elements.exitDeleteMode.addEventListener("click", () => setDeleteMode(false));
+elements.stackPile.addEventListener("click", () => setStackOpen(true));
+elements.stackCollapse.addEventListener("click", () => setStackOpen(false));
+elements.stackDelete.addEventListener("click", () => void trashPicks());
+document.addEventListener("keydown", event => {
+  if (event.key !== "Escape" || !state.deleteMode || elements.previewDialog.open || event.target === elements.searchInput) return;
+  if (state.stackOpen) setStackOpen(false); else setDeleteMode(false);
+});
 elements.previewDialog.addEventListener("keydown", event => {
   if (event.key === "ArrowLeft") { event.preventDefault(); navigatePreview(-1); }
   if (event.key === "ArrowRight") { event.preventDefault(); navigatePreview(1); }
+  if ((event.key === "Delete" || event.key === "Backspace") && !event.repeat) { event.preventDefault(); void trashPreviewAsset(); }
 });
 elements.previewDialog.addEventListener("close", () => {
   state.previewClosing = false;
   elements.previewDialog.classList.remove("is-closing");
   state.previewGeneration += 1; state.previewAsset = null;
+  clearTimeout(state.trashArmTimer); state.trashArmedId = null;
   state.previewController?.abort(); state.previewController = null;
   if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
   state.previewUrl = null; elements.previewImage.removeAttribute("src");

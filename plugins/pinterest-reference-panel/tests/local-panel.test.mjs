@@ -4,7 +4,8 @@ import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { InboxService, startLocalPanelServer } from "../dist/server.bundle.js";
+import { InboxService, ReferenceSessions, startLocalPanelServer } from "../dist/server.bundle.js";
+import { rename } from "node:fs/promises";
 
 async function openSession(url) {
   const response = await fetch(url);
@@ -321,6 +322,118 @@ test("local panel close can retry after a transient callback failure", async () 
     await assert.rejects(fetch(panel.url));
   } finally {
     Server.prototype.close = originalClose;
+    await panel.close();
+    await inbox.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("trash moves only an indexed original out of the library and drops it from baskets", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pinterest-local-panel-trash-"));
+  const inboxRoot = join(root, "PinterestInbox");
+  const trashRoot = join(root, "Trash");
+  await mkdir(join(inboxRoot, "editorial"), { recursive: true });
+  await mkdir(trashRoot, { recursive: true });
+  const fixture = await readFile(new URL("../../../docs/images/preview.png", import.meta.url));
+  await writeFile(join(inboxRoot, "editorial", "keep__pin-1.png"), fixture);
+  await writeFile(join(inboxRoot, "editorial", "drop__pin-2.png"), fixture);
+  const trashed = [];
+  let failTrash = false;
+  const inbox = new InboxService({
+    inboxRoot, cacheRoot: join(root, "cache"), reconcileIntervalMs: 60_000,
+    trashFile: async (path) => {
+      if (failTrash) throw new Error(`injected failure for ${path}`);
+      trashed.push(path);
+      await rename(path, join(trashRoot, path.split("/").at(-1)));
+    }
+  });
+  await inbox.start();
+  const references = new ReferenceSessions(inbox);
+  const basket = references.create();
+  const panel = await startLocalPanelServer({ inbox, port: 0, clipboardWriter: async () => {}, references });
+
+  try {
+    const session = await openSession(panel.url);
+    const origin = { Origin: new URL(panel.url).origin };
+    const { page } = await (await api(panel.url, session, "/api/inbox?limit=30")).json();
+    const drop = page.assets.find(asset => asset.pinId === "2");
+    const keep = page.assets.find(asset => asset.pinId === "1");
+    const selected = await api(panel.url, session, "/api/references", {
+      method: "POST", body: { assetIds: [keep.id, drop.id], revision: 0 },
+      headers: { ...origin, "X-Pinterest-Reference-Session": basket }
+    });
+    assert.equal(selected.status, 200);
+
+    const trash = (body, headers = origin) => api(panel.url, session, "/api/trash", { method: "POST", body, headers });
+    assert.equal((await trash({ assetIds: [drop.id] }, { Origin: "https://attacker.example" })).status, 403);
+    assert.equal((await trash({ assetIds: [drop.id], path: "/etc/hosts" })).status, 400);
+    assert.equal((await trash({ assetIds: [] })).status, 400);
+    assert.equal((await trash({ assetIds: [drop.id, drop.id] })).status, 400);
+    assert.equal((await trash({ assetIds: ["../../etc/hosts"] })).status, 400);
+    assert.equal((await trash({ assetIds: Array.from({ length: 101 }, (_, index) => index.toString(16).padStart(24, "0")) })).status, 400);
+    assert.equal((await trash({ assetIds: ["0".repeat(24)] })).status, 404);
+
+    failTrash = true;
+    const failed = await trash({ assetIds: [drop.id] });
+    assert.equal(failed.status, 503);
+    const failedBody = await failed.json();
+    assert.equal(JSON.stringify(failedBody).includes(inboxRoot), false, "errors must not leak library paths");
+    assert.equal((await stat(join(inboxRoot, "editorial", "drop__pin-2.png"))).isFile(), true);
+    failTrash = false;
+
+    const response = await trash({ assetIds: [drop.id, "0".repeat(24)] });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.status, "trashed");
+    assert.deepEqual(result.trashed.map(item => item.assetId), [drop.id]);
+    assert.deepEqual(result.failed, []);
+    assert.equal(result.missing, 1);
+    assert.equal(result.total, 1);
+    assert.equal(JSON.stringify(result).includes(inboxRoot), false);
+    assert.deepEqual(trashed, [join(await realpath(inboxRoot), "editorial", "drop__pin-2.png")]);
+    assert.equal((await stat(join(trashRoot, "drop__pin-2.png"))).isFile(), true);
+
+    const after = await (await api(panel.url, session, "/api/inbox?limit=30")).json();
+    assert.deepEqual(after.page.assets.map(asset => asset.id), [keep.id]);
+    const basketAfter = await (await api(panel.url, session, "/api/references", { headers: { "X-Pinterest-Reference-Session": basket } })).json();
+    assert.deepEqual(basketAfter.entries.map(entry => entry.id), [keep.id]);
+    assert.equal(basketAfter.revision, 2);
+
+    assert.equal((await trash({ assetIds: [drop.id] })).status, 404);
+  } finally {
+    await panel.close();
+    await inbox.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("batch trash keeps going past a failed file and reports each outcome", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pinterest-local-panel-trash-batch-"));
+  const inboxRoot = join(root, "PinterestInbox");
+  await mkdir(join(inboxRoot, "board"), { recursive: true });
+  const fixture = await readFile(new URL("../../../docs/images/preview.png", import.meta.url));
+  for (const name of ["a__pin-1.png", "b__pin-2.png", "c__pin-3.png"]) await writeFile(join(inboxRoot, "board", name), fixture);
+  const inbox = new InboxService({
+    inboxRoot, cacheRoot: join(root, "cache"), reconcileIntervalMs: 60_000,
+    trashFile: async (path) => {
+      if (path.endsWith("b__pin-2.png")) throw new Error("locked");
+      await rm(path);
+    }
+  });
+  await inbox.start();
+  const panel = await startLocalPanelServer({ inbox, port: 0, clipboardWriter: async () => {} });
+  try {
+    const session = await openSession(panel.url);
+    const { page } = await (await api(panel.url, session, "/api/inbox?limit=30&sort=title")).json();
+    const ids = page.assets.map(asset => asset.id);
+    const response = await api(panel.url, session, "/api/trash", { method: "POST", body: { assetIds: ids }, headers: { Origin: new URL(panel.url).origin } });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.deepEqual(result.trashed.map(item => item.assetId), [ids[0], ids[2]]);
+    assert.deepEqual(result.failed, [ids[1]]);
+    assert.equal(result.total, 1);
+    assert.equal((await stat(join(inboxRoot, "board", "b__pin-2.png"))).isFile(), true);
+  } finally {
     await panel.close();
     await inbox.close();
     await rm(root, { recursive: true, force: true });
