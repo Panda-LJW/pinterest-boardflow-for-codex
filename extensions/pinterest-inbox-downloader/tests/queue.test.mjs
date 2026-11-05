@@ -329,3 +329,33 @@ test("cancelling the group of single-image jobs removes all waiting downloads",a
  assert.equal(h.downloadCalls.length,1);assert.deepEqual(h.cancelled,[1]);
  assert.ok(h.progress.filter(p=>p.status.done).every(p=>p.status.cancelled));
 });
+
+test("probes only the preferred originals format when it exists", async () => {
+  const probes = [];
+  const h = await createHarness((url) => { probes.push(url); return successfulOriginal(url); });
+  h.enqueue({type:"pinterestInboxEnqueue",jobId:"probe-once",quality:"original",assets:[
+    {pinId:"90",boardSlug:"board",title:"one",imageUrl:"https://i.pinimg.com/736x/p/one.jpg"}
+  ]});
+  await waitUntil(() => h.downloadCalls.length === 1);
+  assert.deepEqual(probes, ["https://i.pinimg.com/originals/p/one.jpg"]);
+  h.complete(1);
+  await waitUntil(() => h.progress.some((item) => item.status?.done));
+});
+
+test("progress reports carry per-pin downloading and saved states", async () => {
+  const h = await createHarness(successfulOriginal);
+  h.enqueue({type:"pinterestInboxEnqueue",jobId:"states",quality:"original",assets:[
+    {pinId:"91",boardSlug:"board",title:"a",imageUrl:"https://i.pinimg.com/736x/s/a.jpg"},
+    {pinId:"92",boardSlug:"board",title:"b",imageUrl:"https://i.pinimg.com/736x/s/b.jpg"}
+  ]});
+  await waitUntil(() => h.downloadCalls.length === 1);
+  h.complete(1);
+  await waitUntil(() => h.downloadCalls.length === 2);
+  h.complete(2, "interrupted");
+  await waitUntil(() => h.downloadCalls.length === 3);
+  h.complete(3, "interrupted");
+  await waitUntil(() => h.progress.some((item) => item.status?.done));
+  const items = h.progress.filter((p) => p.item).map((p) => `${p.item.pinId}:${p.item.state}`);
+  assert.deepEqual(items, ["91:downloading", "91:saved", "92:downloading", "92:failed"]);
+  assert.equal(h.progress.at(-1).item.state, "failed");
+});
