@@ -12,39 +12,52 @@
 
 ## 界面预览
 
-以下截图拍摄于 0.4 版（0.5 的交互变化见下方“当前状态”）：Pinterest 页面使用真实公开搜索结果，BoardFlow 工作台使用同组公开 Pin 画面在隔离演示环境中呈现。账号入口已遮挡，**不包含用户名、邮箱、私人 Board、个人收藏或本机路径**。截图中的 Pin 缩略图仅用于说明产品界面，版权归各自权利人所有。
+瀑布流看板与下载器面板的截图来自 0.5 版的实际代码，在隔离的本地演示环境中拍摄：页面使用一组公开 Pin 画面和模拟数据，不读取用户素材库，也不连接 Pinterest 账号。“在 Pinterest 页面上直接收集”一图和主视觉拍摄于真实的 Pinterest 公开搜索页（0.4 版面板），账号入口已遮挡。所有截图**不包含用户名、邮箱、私人 Board、个人收藏或本机路径**，Pin 缩略图仅用于说明产品界面，版权归各自权利人所有。
+
+### 在 Codex / Claude Code 中浏览并组装参考图
+
+<p align="center">
+  <img src="docs/images/boardflow-dashboard.png" alt="Pinterest BoardFlow 0.5 瀑布流：点击图片加入参考篮，选中的图带编号，下方是悬浮参考篮" width="100%">
+</p>
+
+点击图片即可加入参考篮，选中的图带红色描边和编号；悬浮参考篮保留明确顺序，交给 AI 助手时按 `01 / 02 / 03` 读取原文件。按 `⌘C` 复制整组路径，`Esc` 清空。
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/boardflow-preview.png" alt="Pinterest BoardFlow 原图预览，已选为参考"></td>
+    <td width="50%"><img src="docs/images/boardflow-boards.png" alt="Pinterest BoardFlow Boards 图版聚合视图"></td>
+  </tr>
+  <tr>
+    <td><strong>原图预览</strong><br>右上角放大按钮打开；空格加入参考，双击或按 Z 放大细节，← → 翻图。</td>
+    <td><strong>Boards 聚合</strong><br>保留 Pinterest 图版结构，适合按项目或风格浏览。</td>
+  </tr>
+</table>
+
+<table>
+  <tr>
+    <td width="34%"><img src="docs/images/boardflow-side-panel.png" alt="右侧面板宽度下的 Pinterest BoardFlow：滚动后只保留搜索栏"></td>
+    <td width="66%"><strong>为右侧面板设计</strong><br>在 Codex 或 Claude Code 旁边的窄面板里，向下滚动时标题和标签自动收起，只留搜索栏；参考篮浮在下方，不占整行。<br><br>参考篮里拖动缩略图即可调整顺序；排序菜单、参考篮伸缩都使用弹簧动效。</td>
+  </tr>
+</table>
 
 ### 在 Pinterest 页面上直接收集
 
 <table>
   <tr>
-    <td width="72%"><img src="docs/images/boardflow-downloader.png" alt="Pinterest BoardFlow 下载器在真实 Pinterest 公开搜索页上多选图片"></td>
-    <td width="28%"><img src="docs/images/boardflow-downloader-panel.png" alt="Pinterest BoardFlow 下载器控制面板"></td>
+    <td width="66%"><img src="docs/images/boardflow-downloader-badges.png" alt="下载器 0.5 在演示图版上运行：Pin 卡片显示已保存、下载中、排队中和下载过的标记"></td>
+    <td width="34%"><img src="docs/images/boardflow-downloader-panel.png" alt="Pinterest BoardFlow 下载器 0.5 控制面板：展开状态和收起后的胶囊"></td>
   </tr>
   <tr>
-    <td><strong>下载器实际运行效果</strong><br>单张、多选和整板下载，选中态直接反馈在 Pin 上。</td>
-    <td><strong>轻量控制面板</strong><br>设置保存质量，查看队列与下载进度。</td>
+    <td><strong>Pin 上直接看到状态</strong><br>已保存 / 下载中 / 排队中一目了然，以前下过的图带小 ✓（本地演示图版，卡片结构与 Pinterest 一致）。</td>
+    <td><strong>紧凑的控制面板</strong><br>可拖动、记住位置；收起后是显示进度的小胶囊。</td>
   </tr>
 </table>
-
-### 在 Codex 中浏览并组装参考图
 
 <p align="center">
-  <img src="docs/images/boardflow-dashboard.png" alt="Pinterest BoardFlow Pins 瀑布流与有序参考篮" width="100%">
+  <img src="docs/images/boardflow-downloader.png" alt="Pinterest BoardFlow 下载器在真实 Pinterest 公开搜索页上多选图片（0.4 版面板）" width="100%">
 </p>
 
-从长期素材库中搜索、预览和选图；参考篮保留明确顺序，交给 AI 助手时按 `01 / 02 / 03` 读取原文件。
-
-<table>
-  <tr>
-    <td width="50%"><img src="docs/images/boardflow-boards.png" alt="Pinterest BoardFlow Boards 图版聚合视图"></td>
-    <td width="50%"><img src="docs/images/boardflow-preview.png" alt="Pinterest BoardFlow 原图预览弹窗"></td>
-  </tr>
-  <tr>
-    <td><strong>Boards 聚合</strong><br>保留 Pinterest 图版结构，适合按项目或风格浏览。</td>
-    <td><strong>原图预览</strong><br>键盘翻图、查看信息，并直接加入当前参考篮。</td>
-  </tr>
-</table>
+真实 Pinterest 公开搜索页上的多选效果（0.4 版面板）。
 
 ## 当前状态
 
