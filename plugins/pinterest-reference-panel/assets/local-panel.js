@@ -39,6 +39,21 @@ function playMotion(node, frames, options = {}) {
   animation.finished.then(release, release);
   return animation;
 }
+// Spring sampled into a CSS linear() curve, for frames that resize (the reference dock).
+function springCurve(response, dampingRatio) {
+  const omega = (2 * Math.PI) / response, zeta = dampingRatio;
+  const at = t => {
+    if (zeta >= 1) return 1 - Math.exp(-omega * t) * (1 + omega * t);
+    const damped = omega * Math.sqrt(1 - zeta * zeta);
+    return 1 - Math.exp(-zeta * omega * t) * (Math.cos(damped * t) + ((zeta * omega) / damped) * Math.sin(damped * t));
+  };
+  let settle = 0.1;
+  while (settle < 2 && Math.abs(1 - at(settle)) > 0.002) settle += 0.01;
+  const points = Array.from({ length: 41 }, (_, index) => (index === 40 ? 1 : Number(at((settle * index) / 40).toFixed(4))));
+  const supported = Boolean(globalThis.CSS?.supports?.("animation-timing-function", "linear(0, 1)"));
+  return { easing: supported ? `linear(${points.join(", ")})` : "cubic-bezier(.22,1,.36,1)", duration: Math.round(settle * 1000) };
+}
+const SPRING = springCurve(0.44, 0.86);
 function pulseControl(node) {
   playMotion(node, [{ transform: "scale(.86)" }, { transform: "scale(1.1)", offset: .55 }, { transform: "scale(1)" }], { duration: 220 });
 }
@@ -63,6 +78,11 @@ function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "";
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+}
+// Filenames without a real Pinterest title come through as "pin 7046…" — not worth showing.
+function displayTitle(asset) {
+  const title = String(asset?.title ?? "").trim();
+  return /^pin[\s_-]*[0-9a-z-]{6,}$/i.test(title) && /\d{6,}/.test(title) ? "" : title;
 }
 function viewKey() { return JSON.stringify([state.tab, state.boardId, state.query, state.sort]); }
 function selectedIndex(assetId) { return state.selection?.entries.findIndex(entry => entry.id === assetId) ?? -1; }
@@ -115,7 +135,7 @@ function clearThumbnailCache() {
   state.thumbnailFailures.clear();
 }
 async function withThumbnailSlot(task) {
-  if (state.thumbnailActive >= 4) await new Promise(resolve => state.thumbnailWaiters.push(resolve));
+  if (state.thumbnailActive >= 6) await new Promise(resolve => state.thumbnailWaiters.push(resolve));
   state.thumbnailActive += 1;
   try { return await task(); }
   finally { state.thumbnailActive -= 1; state.thumbnailWaiters.shift()?.(); }
@@ -149,7 +169,7 @@ const thumbnailObserver = typeof IntersectionObserver === "undefined" ? null : n
     observedThumbnails.delete(entry.target);
     void loadThumbnail(entry.target);
   }
-}, { rootMargin: "300px" });
+}, { rootMargin: "900px 0px" });
 function thumbnailImage(assetId, alt = "") {
   const image = document.createElement("img");
   image.alt = alt;
@@ -267,18 +287,25 @@ function updateCopyState(assetId) {
     elements.previewCopy.textContent = state.pendingCopies.has(assetId) ? "复制中…" : "复制路径";
   }
 }
+function canSelectReferences() { return Boolean(state.selection) && !state.selectionError; }
 function applySelectionState(card) {
   const id = card.dataset.assetId;
   const index = selectedIndex(id);
-  const action = card.querySelector(".pin-select");
+  const trigger = card.querySelector(".preview-trigger");
+  const badge = card.querySelector(".pin-order");
   const changed = card.classList.contains("is-selected") !== (index >= 0);
   card.classList.toggle("is-selected", index >= 0);
-  action.textContent = index >= 0 ? `已选 ${index + 1}` : "选择";
-  action.setAttribute("aria-pressed", String(index >= 0));
-  action.setAttribute("aria-label", `${index >= 0 ? "移除参考" : "加入参考"}：${card.dataset.title}`);
-  action.title = index >= 0 ? `参考图 ${index + 1} · 点击移除` : "加入参考篮";
-  action.disabled = !state.selection || Boolean(state.selectionError);
-  if (changed) pulseControl(action);
+  badge.textContent = index >= 0 ? String(index + 1) : "";
+  const label = canSelectReferences() ? `${index >= 0 ? `移除参考 ${index + 1}` : "加入参考"}：${card.dataset.title}` : `预览：${card.dataset.title}`;
+  trigger.setAttribute("aria-label", label); trigger.title = canSelectReferences() ? (index >= 0 ? `参考图 ${index + 1} · 点击移除` : "点击加入参考篮") : "点击预览";
+  trigger.setAttribute("aria-pressed", String(index >= 0));
+  if (changed && index >= 0) playMotion(badge, [{ transform: "scale(.4)", opacity: 0 }, { transform: "scale(1.12)", opacity: 1, offset: .6 }, { transform: "scale(1)", opacity: 1 }], { duration: 300 });
+}
+// Clicking a pin picks it; the corner button (or the preview fallback when no
+// reference basket is attached) opens the large preview.
+function activatePin(asset) {
+  if (state.deleteMode) { togglePick(asset); return; }
+  if (canSelectReferences()) toggleReference(asset); else void openPreview(asset);
 }
 function pinCard(asset) {
   const card = element("article", "pin-card");
@@ -290,15 +317,22 @@ function pinCard(asset) {
     frame.classList.add("has-ratio");
     frame.style.setProperty("--thumb-ratio", `${asset.width} / ${asset.height}`);
   }
-  const preview = button("preview-trigger", null, `预览：${asset.title}`, () => state.deleteMode ? togglePick(asset) : void openPreview(asset));
+  const preview = button("preview-trigger", null, `加入参考：${asset.title}`, () => activatePin(asset));
   preview.append(thumbnailImage(asset.id, asset.title), element("span", "thumb-skeleton"));
-  frame.append(preview, button("pin-select", "选择", `加入参考：${asset.title}`, () => toggleReference(asset)), element("span", "pin-check"));
+  const expand = button("pin-expand", null, `放大预览：${asset.title}`, () => void openPreview(asset));
+  expand.title = "放大预览";
+  expand.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>';
+  frame.append(preview, expand, element("span", "pin-order"), element("span", "pin-check"));
   const body = element("div", "pin-body");
   const copy = element("div", "pin-copy-text");
-  const title = element("p", "pin-title", asset.title); title.title = asset.title;
   const meta = element("div", "pin-meta");
   meta.append(element("span", "", asset.boardTitle), element("span", "", asset.extension.slice(1).toUpperCase()));
-  copy.append(title, meta);
+  const shownTitle = displayTitle(asset);
+  if (shownTitle) {
+    const title = element("p", "pin-title", shownTitle); title.title = shownTitle;
+    copy.append(title);
+  }
+  copy.append(meta);
   body.append(copy, button("pin-copy", "复制", `复制路径：${asset.title}`, () => void copyAsset(asset)));
   card.append(frame, body);
   applyCopyState(card, asset.id); applySelectionState(card); applyPickState(card);
@@ -519,12 +553,15 @@ function updateSelectionStatus() {
   elements.copySelection.textContent = state.copyingSelection ? "复制中…" : "复制路径";
   elements.selectionHint.textContent = !referenceSessionId ? "此页可浏览素材；请让 AI 助手为当前任务打开参考篮。"
     : state.selectionError || (unavailable ? "有参考图已变化或不可用，请移除后重新选择。"
-      : entries.length ? "回到当前对话，说“使用选中的参考图”。编号对应左侧顺序。" : "点图片上的「选择」，组合你的下一组参考。");
+      : entries.length ? "回到对话说“使用选中的参考图”" : "点击图片加入参考篮");
   elements.selectionHint.classList.toggle("is-error", Boolean(state.selectionError) || unavailable);
+  const empty = !entries.length && !state.selectionError;
+  elements.referenceTray.classList.toggle("is-empty", empty);
   elements.referenceTray.setAttribute("aria-busy", String(state.selectionPending > 0));
 }
 function renderSelection() {
   const trayBefore = elements.referenceTray.getBoundingClientRect();
+  const wasEmpty = elements.referenceTray.classList.contains("is-empty");
   const positions = new Map([...elements.selectionList.children].map(node => [node.dataset.assetId, node.getBoundingClientRect()]));
   nodeMotions.get(elements.referenceTray)?.cancel();
   for (const node of elements.selectionList.children) nodeMotions.get(node)?.cancel();
@@ -545,15 +582,14 @@ function renderSelection() {
     const thumb = button("selection-thumb", null, `预览参考 ${index + 1}：${entry.title}`, () => void openPreview(entry));
     thumb.append(thumbnailImage(entry.id), element("span", "selection-number", String(index + 1)));
     const remove = button("selection-remove", "×", `移除参考 ${index + 1}`, () => mutateSelection(ids => ids.filter(id => id !== entry.id)));
-    const order = element("div", "selection-order");
-    const earlier = button("", "←", `参考 ${index + 1} 向前移动`, () => moveReference(entry.id, -1));
-    const later = button("", "→", `参考 ${index + 1} 向后移动`, () => moveReference(entry.id, 1));
-    earlier.disabled = index === 0; later.disabled = index === entries.length - 1;
-    for (const [action, node] of [["preview", thumb], ["remove", remove], ["earlier", earlier], ["later", later]]) node.dataset.selectionAction = action;
-    order.append(earlier, element("span", "", entry.status === "ready" ? String(index + 1).padStart(2, "0") : "失效"), later);
-    item.append(thumb, remove, order); elements.selectionList.append(item);
+    for (const [action, node] of [["preview", thumb], ["remove", remove]]) node.dataset.selectionAction = action;
+    thumb.title = `参考 ${index + 1}：拖动调整顺序，点击放大（⌥← / ⌥→ 也可移动）`;
+    if (entry.status !== "ready") thumb.append(element("span", "selection-invalid", "失效"));
+    item.draggable = entries.length > 1;
+    item.append(thumb, remove); elements.selectionList.append(item);
   });
   elements.selectionList.scrollLeft = scrollLeft;
+  updateDockOverflow();
   if (focusedId) {
     const item = [...elements.selectionList.children].find(node => node.dataset.assetId === focusedId);
     const action = item?.querySelector(`[data-selection-action="${focusedAction}"]`);
@@ -562,18 +598,34 @@ function renderSelection() {
   }
   for (const card of elements.content.querySelectorAll(".pin-card")) applySelectionState(card);
   updatePreviewControls(); hydrateThumbnails();
-  const trayOffset = trayBefore.top - elements.referenceTray.getBoundingClientRect().top;
+  const trayAfter = elements.referenceTray.getBoundingClientRect();
   const items = [...elements.selectionList.children].map(node => ({ node, after: node.getBoundingClientRect(), before: positions.get(node.dataset.assetId) }));
-  if (Math.abs(trayOffset) > 1) playMotion(elements.referenceTray, [{ transform: `translateY(${trayOffset}px)` }, { transform: "translateY(0)" }], { duration: 220 });
-  for (const { node, before, after } of items) {
+  const spring = { duration: SPRING.duration, easing: SPRING.easing };
+  if (Math.abs(trayBefore.width - trayAfter.width) > 1 || Math.abs(trayBefore.height - trayAfter.height) > 1) {
+    playMotion(elements.referenceTray, [
+      { width: `${trayBefore.width}px`, height: `${trayBefore.height}px` },
+      { width: `${trayAfter.width}px`, height: `${trayAfter.height}px` }
+    ], spring);
+  }
+  if (wasEmpty !== elements.referenceTray.classList.contains("is-empty")) {
+    for (const part of elements.referenceTray.querySelectorAll(".tray-info, .tray-actions")) playMotion(part, [{ opacity: 0, filter: "blur(4px)" }, { opacity: 1, filter: "none" }], { duration: 280, delay: 60 });
+  }
+  for (const [index, { node, before, after }] of items.entries()) {
     if (!before) {
-      playMotion(node, [{ opacity: 0, transform: "translateY(12px) scale(.9)" }, { opacity: 1, transform: "translateY(0) scale(1)" }], { duration: 220 });
+      playMotion(node, [{ opacity: 0, transform: "scale(.6)", filter: "blur(4px)" }, { opacity: 1, transform: "scale(1)", filter: "none" }], { ...spring, delay: 40 + Math.min(index, 4) * 20 });
     } else {
-      const x = before.left - after.left, y = before.top - after.top - trayOffset;
-      if (Math.abs(x) > 1 || Math.abs(y) > 1) playMotion(node, [{ transform: `translate(${x}px,${y}px)` }, { transform: "translate(0,0)" }], { duration: 220 });
+      const x = before.left - after.left, y = before.top - after.top;
+      if (Math.abs(x) > 1 || Math.abs(y) > 1) playMotion(node, [{ transform: `translate(${x}px,${y}px)` }, { transform: "translate(0,0)" }], spring);
     }
   }
 }
+// Fade the dock's right edge only while more tiles are scrolled out of view.
+function updateDockOverflow() {
+  const list = elements.selectionList;
+  const overflowing = list.scrollWidth - list.clientWidth - list.scrollLeft > 2;
+  list.classList.toggle("is-overflowing", overflowing);
+}
+elements.selectionList.addEventListener("scroll", updateDockOverflow, { passive: true });
 function mutateSelection(transform) {
   if (!state.selection || state.selectionError) { showToast(state.selectionError || "参考篮尚未就绪", true); return; }
   state.selectionPending += 1; updateSelectionStatus();
@@ -595,6 +647,53 @@ function mutateSelection(transform) {
     updateSelectionStatus();
   });
 }
+// Drag to reorder: the dragged tile moves live (siblings glide via FLIP) and the
+// final order is saved once on drop. ⌥←/⌥→ on a focused tile does the same by keyboard.
+let traySortId = null;
+function flipSiblings(mutate) {
+  const before = new Map([...elements.selectionList.children].map(node => [node, node.getBoundingClientRect().left]));
+  mutate();
+  for (const [node, left] of before) {
+    const dx = left - node.getBoundingClientRect().left;
+    if (Math.abs(dx) > 1 && node.dataset.assetId !== traySortId) playMotion(node, [{ transform: `translateX(${dx}px)` }, { transform: "none" }], { duration: 260 });
+  }
+}
+elements.selectionList.addEventListener("dragstart", event => {
+  const item = event.target.closest?.(".selection-item");
+  if (!item || state.selectionPending || !state.selection) { event.preventDefault(); return; }
+  traySortId = item.dataset.assetId;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", traySortId);
+  requestAnimationFrame(() => item.classList.add("is-dragging"));
+});
+elements.selectionList.addEventListener("dragover", event => {
+  if (!traySortId) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  const dragged = [...elements.selectionList.children].find(node => node.dataset.assetId === traySortId);
+  const others = [...elements.selectionList.children].filter(node => node !== dragged);
+  const before = others.find(node => { const box = node.getBoundingClientRect(); return event.clientX < box.left + box.width / 2; }) ?? null;
+  if (dragged && dragged.nextElementSibling !== before && before !== dragged) flipSiblings(() => elements.selectionList.insertBefore(dragged, before));
+});
+elements.selectionList.addEventListener("drop", event => { if (traySortId) event.preventDefault(); });
+elements.selectionList.addEventListener("dragend", () => {
+  const id = traySortId;
+  traySortId = null;
+  for (const node of elements.selectionList.children) node.classList.remove("is-dragging");
+  if (!id || !state.selection) return;
+  const order = [...elements.selectionList.children].map(node => node.dataset.assetId);
+  const current = state.selection.entries.map(entry => entry.id);
+  if (order.join() === current.join()) return;
+  // Apply the dropped order against the latest confirmed list, keeping any ids it no longer has out.
+  mutateSelection(ids => [...order.filter(item => ids.includes(item)), ...ids.filter(item => !order.includes(item))]);
+});
+elements.selectionList.addEventListener("keydown", event => {
+  if (!event.altKey || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+  const id = event.target.closest?.(".selection-item")?.dataset.assetId;
+  if (!id) return;
+  event.preventDefault();
+  moveReference(id, event.key === "ArrowLeft" ? -1 : 1);
+});
 function toggleReference(asset) {
   mutateSelection(ids => ids.includes(asset.id) ? ids.filter(id => id !== asset.id) : [...ids, asset.id]);
 }
@@ -633,7 +732,8 @@ function updatePreviewControls() {
   const position = state.assets.findIndex(asset => asset.id === state.previewAsset.id);
   elements.previousPreview.disabled = position <= 0;
   elements.nextPreview.disabled = position < 0 || position >= state.assets.length - 1;
-  elements.previewPosition.textContent = position >= 0 ? `原图预览 · ${position + 1} / ${state.assets.length} 张已加载` : "参考图 · 原图预览";
+  elements.previewPosition.textContent = position >= 0 ? `${position + 1} / ${Math.max(state.total, state.assets.length)}` : "参考图预览";
+  elements.nextPreview.disabled = position < 0 || (position >= state.assets.length - 1 && !state.nextCursor);
 }
 function disarmTrash() {
   clearTimeout(state.trashArmTimer);
@@ -840,9 +940,10 @@ async function openPreview(asset, direction = 0) {
   if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
   state.previewUrl = null;
   elements.previewImage.hidden = true; elements.previewImage.removeAttribute("src");
-  elements.previewImage.alt = asset.title;
+  resetZoom();
+  elements.previewImage.alt = displayTitle(asset) || asset.boardTitle;
   document.querySelector("#previewFeedback").textContent = "";
-  elements.previewTitle.textContent = asset.title;
+  elements.previewTitle.textContent = displayTitle(asset) || `${asset.boardTitle} · 未命名 Pin`;
   elements.previewMeta.textContent = `${asset.boardTitle} · ${asset.extension.slice(1).toUpperCase()} · ${formatBytes(asset.size)}`;
   elements.previewMessage.textContent = "正在读取原图…"; elements.previewMessage.hidden = false;
   updatePreviewControls(); updateCopyState(asset.id);
@@ -866,11 +967,58 @@ async function openPreview(asset, direction = 0) {
     elements.previewImage.src = url;
   } catch (error) { if (generation === state.previewGeneration) elements.previewMessage.textContent = error.message || "原图暂时不可读"; }
 }
-function navigatePreview(offset) {
+async function navigatePreview(offset) {
   const index = state.assets.findIndex(asset => asset.id === state.previewAsset?.id);
+  if (index < 0) return;
+  // Reaching the end of what is loaded fetches the next page instead of stopping.
+  if (!state.assets[index + offset] && offset > 0 && state.nextCursor && !state.pageLoading) await loadPage();
   const next = state.assets[index + offset];
-  if (index >= 0 && next) void openPreview(next, offset);
+  if (next && elements.previewDialog.open) void openPreview(next, offset);
 }
+// Double-click (or the Z key) zooms the original to its natural size around the
+// pointer; drag to pan while zoomed. Navigating or closing resets the view.
+const zoom = { active: false, x: 0, y: 0, scale: 1, drag: null };
+function applyZoom(animate = true) {
+  const image = elements.previewImage;
+  elements.previewStage.classList.toggle("is-zoomed", zoom.active);
+  image.style.transition = animate ? "transform 320ms cubic-bezier(.22,1,.36,1)" : "none";
+  image.style.transform = zoom.active ? `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})` : "";
+}
+function resetZoom() { zoom.active = false; zoom.x = zoom.y = 0; zoom.scale = 1; zoom.drag = null; applyZoom(false); }
+function clampZoom() {
+  const stage = elements.previewStage.getBoundingClientRect(), image = elements.previewImage;
+  const width = image.offsetWidth * zoom.scale, height = image.offsetHeight * zoom.scale;
+  const maxX = Math.max(0, (width - stage.width) / 2), maxY = Math.max(0, (height - stage.height) / 2);
+  zoom.x = Math.min(maxX, Math.max(-maxX, zoom.x)); zoom.y = Math.min(maxY, Math.max(-maxY, zoom.y));
+}
+function toggleZoom(clientX, clientY) {
+  const image = elements.previewImage;
+  if (image.hidden || !image.naturalWidth) return;
+  if (zoom.active) { resetZoom(); applyZoom(true); return; }
+  const fitScale = image.offsetWidth / image.naturalWidth;
+  zoom.scale = Math.max(2, 1 / fitScale);
+  const box = image.getBoundingClientRect();
+  const px = (clientX ?? box.left + box.width / 2) - (box.left + box.width / 2);
+  const py = (clientY ?? box.top + box.height / 2) - (box.top + box.height / 2);
+  zoom.x = -px * (zoom.scale - 1); zoom.y = -py * (zoom.scale - 1);
+  zoom.active = true; clampZoom(); applyZoom(true);
+}
+elements.previewImage.addEventListener("dblclick", event => toggleZoom(event.clientX, event.clientY));
+elements.previewImage.addEventListener("pointerdown", event => {
+  if (!zoom.active || event.button !== 0) return;
+  event.preventDefault();
+  zoom.drag = { x: event.clientX - zoom.x, y: event.clientY - zoom.y };
+  elements.previewImage.setPointerCapture?.(event.pointerId);
+  elements.previewStage.classList.add("is-panning");
+});
+elements.previewImage.addEventListener("pointermove", event => {
+  if (!zoom.drag) return;
+  zoom.x = event.clientX - zoom.drag.x; zoom.y = event.clientY - zoom.drag.y;
+  clampZoom(); applyZoom(false);
+});
+for (const type of ["pointerup", "pointercancel"]) elements.previewImage.addEventListener(type, () => {
+  zoom.drag = null; elements.previewStage.classList.remove("is-panning");
+});
 async function dismissPreview() {
   if (!elements.previewDialog.open || state.previewClosing) return;
   state.previewClosing = true;
@@ -921,8 +1069,8 @@ elements.clearSelection.addEventListener("click", () => mutateSelection(() => []
 elements.copySelection.addEventListener("click", () => void copySelection());
 elements.closePreview.addEventListener("click", () => void dismissPreview());
 elements.previewDialog.addEventListener("cancel", event => { event.preventDefault(); void dismissPreview(); });
-elements.previousPreview.addEventListener("click", () => navigatePreview(-1));
-elements.nextPreview.addEventListener("click", () => navigatePreview(1));
+elements.previousPreview.addEventListener("click", () => void navigatePreview(-1));
+elements.nextPreview.addEventListener("click", () => void navigatePreview(1));
 elements.previewCopy.addEventListener("click", () => { if (state.previewAsset) void copyAsset(state.previewAsset); });
 elements.previewSelect.addEventListener("click", () => { if (state.previewAsset) toggleReference(state.previewAsset); });
 elements.previewDelete.addEventListener("click", () => void trashPreviewAsset());
@@ -936,8 +1084,11 @@ document.addEventListener("keydown", event => {
   if (state.stackOpen) setStackOpen(false); else setDeleteMode(false);
 });
 elements.previewDialog.addEventListener("keydown", event => {
-  if (event.key === "ArrowLeft") { event.preventDefault(); navigatePreview(-1); }
-  if (event.key === "ArrowRight") { event.preventDefault(); navigatePreview(1); }
+  if (event.key === "ArrowLeft") { event.preventDefault(); void navigatePreview(-1); }
+  if (event.key === "ArrowRight") { event.preventDefault(); void navigatePreview(1); }
+  // Space adds/removes the previewed image as a reference; Z toggles zoom.
+  if (event.key === " " && !event.repeat) { event.preventDefault(); if (state.previewAsset && !elements.previewSelect.disabled) toggleReference(state.previewAsset); }
+  if ((event.key === "z" || event.key === "Z") && !event.metaKey && !event.ctrlKey && !event.repeat) { event.preventDefault(); toggleZoom(); }
   if ((event.key === "Delete" || event.key === "Backspace") && !event.repeat) { event.preventDefault(); void trashPreviewAsset(); }
 });
 elements.previewDialog.addEventListener("close", () => {
@@ -948,7 +1099,28 @@ elements.previewDialog.addEventListener("close", () => {
   state.previewController?.abort(); state.previewController = null;
   if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
   state.previewUrl = null; elements.previewImage.removeAttribute("src");
+  resetZoom();
 });
+// Scrolling down tucks the title and tabs away and keeps the search field pinned;
+// any upward scroll brings them back. Never hides near the top or while typing.
+const chrome = document.querySelector(".panel-chrome");
+let lastScrollY = 0;
+function measureChrome() {
+  if (!chrome?.getBoundingClientRect) return;
+  const collapse = Math.max(0, (elements.browseTools?.offsetTop ?? 0) - 10);
+  document.documentElement.style.setProperty("--chrome-collapse", `${collapse}px`);
+}
+function updateChromeVisibility() {
+  const y = window.scrollY ?? 0, delta = y - lastScrollY;
+  const busy = document.activeElement === elements.searchInput || document.querySelector(".help-menu[open]");
+  if (y < 120 || busy || delta < -6) document.body.classList.remove("chrome-tucked");
+  else if (delta > 6) document.body.classList.add("chrome-tucked");
+  document.body.classList.toggle("is-scrolled", y > 4);
+  if (Math.abs(delta) > 6 || y < 120) lastScrollY = y;
+}
+window.addEventListener("scroll", updateChromeVisibility, { passive: true });
+elements.searchInput.addEventListener("focus", () => document.body.classList.remove("chrome-tucked"));
+if (typeof ResizeObserver !== "undefined" && chrome) new ResizeObserver(measureChrome).observe(chrome);
 if (typeof ResizeObserver !== "undefined") new ResizeObserver(() => {
   document.documentElement.style.setProperty("--tray-height", `${elements.referenceTray.getBoundingClientRect().height}px`);
 }).observe(elements.referenceTray);

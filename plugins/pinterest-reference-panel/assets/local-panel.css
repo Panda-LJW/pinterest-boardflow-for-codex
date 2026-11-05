@@ -1398,3 +1398,324 @@ select:hover {
     height: 57dvh;
   }
 }
+
+/* ---- 0.5 board refinements ---- */
+:root {
+  --spring:cubic-bezier(.22,1,.36,1);
+  --chrome-collapse:0px
+}
+/* Header tucks the title and tabs away on scroll-down; the search field stays pinned. */
+.panel-chrome {
+  transition:transform 360ms var(--spring),box-shadow 200ms ease;
+  will-change:transform
+}
+.chrome-tucked .panel-chrome {
+  transform:translateY(calc(-1 * var(--chrome-collapse)))
+}
+.panel-chrome>.title-row,.panel-chrome>.navigation-row {
+  transition:opacity 220ms ease
+}
+.chrome-tucked .panel-chrome>.title-row,.chrome-tucked .panel-chrome>.navigation-row {
+  opacity:0;
+  pointer-events:none
+}
+.is-scrolled .panel-chrome {
+  box-shadow:0 1px 0 var(--line)
+}
+/* Selected pins: red ring, image gently inset, numbered badge always visible. */
+.pin-card .thumb-frame {
+  transition:box-shadow 220ms var(--spring)
+}
+.pin-card .thumb-frame img {
+  transition:opacity var(--motion-feedback),transform 260ms var(--spring),border-radius 260ms var(--spring)
+}
+.pin-card.is-selected .thumb-frame {
+  outline:none;
+  box-shadow:0 0 0 3px var(--accent)
+}
+.pin-card.is-selected .thumb-frame .preview-trigger img.is-loaded {
+  transform:scale(.94);
+  border-radius:12px
+}
+/* Click a pin to pick it: numbered badge top-left; the corner button opens the preview. */
+.pin-select {
+  display:none!important
+}
+.preview-trigger {
+  cursor:pointer
+}
+.pin-order {
+  position:absolute;
+  top:10px;
+  left:10px;
+  z-index:2;
+  display:none;
+  place-items:center;
+  min-width:30px;
+  height:30px;
+  padding:0 8px;
+  border-radius:999px;
+  background:var(--accent);
+  color:#fff;
+  font-size:14px;
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+  box-shadow:0 2px 10px #0003;
+  pointer-events:none
+}
+.pin-card.is-selected .pin-order {
+  display:grid
+}
+.pin-expand {
+  position:absolute;
+  top:10px;
+  right:10px;
+  z-index:2;
+  display:grid;
+  place-items:center;
+  width:34px;
+  height:34px;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  background:color-mix(in srgb,#fff 82%,transparent);
+  color:#111;
+  backdrop-filter:blur(10px) saturate(1.6);
+  -webkit-backdrop-filter:blur(10px) saturate(1.6);
+  box-shadow:0 2px 10px #0002;
+  transition:opacity 180ms ease,transform 220ms var(--spring),background-color 160ms ease
+}
+.pin-expand svg {
+  width:16px;
+  height:16px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:2;
+  stroke-linecap:round;
+  stroke-linejoin:round
+}
+.pin-expand:hover {
+  background:#fff;
+  transform:scale(1.06)
+}
+.is-delete-mode .pin-expand,.is-delete-mode .pin-order {
+  display:none
+}
+@media (hover:hover) and (pointer:fine) {
+  .pin-card:not(:hover):not(:has(:focus-visible)) .pin-expand {
+    opacity:0;
+    transform:scale(.85)
+  }
+}
+/* Reference dock: a floating glass capsule that sizes to its content. */
+.reference-tray,.reference-tray.is-empty {
+  left:50%;
+  right:auto;
+  bottom:calc(16px + env(safe-area-inset-bottom));
+  transform:translateX(-50%);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+  width:max-content;
+  max-width:min(760px,calc(100vw - 24px));
+  overflow:hidden;
+  padding:8px 8px 8px 10px;
+  border-radius:24px;
+  background:color-mix(in srgb,var(--surface) 78%,transparent);
+  backdrop-filter:blur(22px) saturate(1.8);
+  -webkit-backdrop-filter:blur(22px) saturate(1.8);
+  box-shadow:0 10px 40px #0000002e,0 0 0 1px color-mix(in srgb,var(--ink) 8%,transparent)
+}
+.reference-tray.is-empty {
+  padding:8px 16px;
+  border-radius:999px
+}
+.reference-tray .selection-list {
+  flex:0 1 auto;
+  min-width:0;
+  gap:8px;
+  margin:0;
+  padding:5px 4px 5px 2px;
+  overflow-x:auto;
+  scrollbar-width:none
+}
+.reference-tray .selection-list.is-overflowing {
+  -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 22px),transparent);
+  mask-image:linear-gradient(to right,#000 calc(100% - 22px),transparent)
+}
+.reference-tray .selection-list::-webkit-scrollbar {
+  display:none
+}
+.tray-info {
+  flex:none;
+  min-width:0
+}
+.tray-label {
+  gap:6px
+}
+.tray-label strong {
+  font-size:13px
+}
+.count-badge {
+  padding:2px 8px;
+  font-size:11px
+}
+.reference-tray .selection-hint {
+  margin:2px 0 0;
+  font-size:11px;
+  line-height:1.4;
+  white-space:nowrap
+}
+.reference-tray.is-empty .tray-info {
+  display:flex;
+  align-items:center;
+  gap:10px
+}
+.reference-tray.is-empty .selection-hint {
+  margin:0;
+  font-size:12px
+}
+.reference-tray.is-empty .tray-actions,.reference-tray.is-empty .selection-status {
+  display:none
+}
+.reference-tray .tray-actions {
+  flex:none;
+  gap:4px
+}
+.reference-tray .button.primary {
+  height:40px;
+  padding:0 16px;
+  border-radius:999px
+}
+.tray-clear {
+  display:grid;
+  place-items:center;
+  width:32px;
+  height:32px;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  background:transparent;
+  color:var(--muted)
+}
+.tray-clear:hover:not(:disabled) {
+  background:var(--chip);
+  color:var(--ink)
+}
+.tray-clear svg {
+  width:14px;
+  height:14px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:2;
+  stroke-linecap:round
+}
+.selection-item {
+  flex:0 0 48px;
+  width:48px;
+  cursor:grab
+}
+.selection-item[draggable=false] {
+  cursor:default
+}
+.selection-item.is-dragging {
+  opacity:.35
+}
+.selection-thumb {
+  width:48px;
+  height:48px;
+  border-radius:12px;
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--ink) 8%,transparent)
+}
+.selection-number {
+  left:auto;
+  right:3px;
+  bottom:3px;
+  width:17px;
+  height:17px;
+  border-radius:50%;
+  background:var(--accent);
+  font-size:10px;
+  font-weight:700
+}
+.selection-remove {
+  top:-4px;
+  right:-4px;
+  width:18px;
+  height:18px;
+  font-size:12px;
+  opacity:0;
+  transform:scale(.7);
+  transition:opacity 160ms ease,transform 200ms var(--spring)
+}
+.selection-item:hover .selection-remove,.selection-item:focus-within .selection-remove {
+  opacity:1;
+  transform:scale(1)
+}
+@media (hover:none) {
+  .selection-remove {
+    opacity:1;
+    transform:none
+  }
+}
+.selection-invalid {
+  position:absolute;
+  inset:auto 0 0;
+  padding:1px 0;
+  background:#b42331d9;
+  color:#fff;
+  font-size:9px;
+  text-align:center
+}
+@media(max-width:520px) {
+  .reference-tray .selection-hint {
+    display:none
+  }
+  .reference-tray.is-empty .selection-hint {
+    display:block
+  }
+}
+.toast {
+  bottom:calc(var(--tray-height) + 30px)
+}
+/* Preview zoom and pan. */
+.preview-stage {
+  overflow:hidden
+}
+.preview-stage>img {
+  cursor:zoom-in;
+  user-select:none;
+  -webkit-user-drag:none
+}
+.preview-stage.is-zoomed>img {
+  cursor:grab
+}
+.preview-stage.is-zoomed.is-panning>img {
+  cursor:grabbing
+}
+.preview-stage.is-zoomed .preview-nav {
+  opacity:0;
+  pointer-events:none
+}
+.preview-header .eyebrow {
+  font-variant-numeric:tabular-nums
+}
+@media(prefers-color-scheme:dark) {
+  .pin-expand {
+    background:color-mix(in srgb,#1c1c1c 78%,transparent);
+    color:#f1f1f1
+  }
+  .pin-expand:hover {
+    background:#2b2b2b
+  }
+}
+@media(prefers-reduced-motion:reduce) {
+  .chrome-tucked .panel-chrome {
+    transform:none
+  }
+  .chrome-tucked .panel-chrome>.title-row,.chrome-tucked .panel-chrome>.navigation-row {
+    opacity:1;
+    pointer-events:auto
+  }
+}

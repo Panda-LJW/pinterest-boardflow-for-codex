@@ -7,7 +7,7 @@ const pluginRoot = new URL("../", import.meta.url);
 test("manifest exposes the local MCP server and its narrow read/write scope", async () => {
   const manifest = JSON.parse(await readFile(new URL(".codex-plugin/plugin.json", pluginRoot), "utf8"));
   assert.equal(manifest.name, "pinterest-reference-panel");
-  assert.match(manifest.version, /^0\.4\.2\+codex\./);
+  assert.match(manifest.version, /^0\.5\.0\+codex\./);
   assert.equal(manifest.interface.displayName, "Pinterest BoardFlow");
   assert.equal(manifest.mcpServers, "./.mcp.json");
   assert.deepEqual(manifest.interface.capabilities, ["Interactive", "Read", "Write"]);
@@ -62,7 +62,7 @@ test("local browser panel is independent from the MCP Apps bridge", async () => 
   assert.match(javascript, /body:\s*\{\s*assetId:\s*asset\.id\s*\}/);
   assert.doesNotMatch(combined, /window\.openai|ui\/initialize|tools\/call|postMessage|sendFollowUpMessage/);
   assert.doesNotMatch(javascript, /sourcePath|workspaceRoot|relativePath/);
-  assert.match(javascript, /thumbnailActive\s*>=\s*4/);
+  assert.match(javascript, /thumbnailActive\s*>=\s*6/);
   assert.match(javascript, /THUMBNAIL_TIMEOUT_MS\s*=\s*20_000/);
   assert.match(javascript, /REFRESH_TIMEOUT_MS\s*=\s*120_000/);
   assert.match(
