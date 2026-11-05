@@ -54,6 +54,14 @@ function springCurve(response, dampingRatio) {
   return { easing: supported ? `linear(${points.join(", ")})` : "cubic-bezier(.22,1,.36,1)", duration: Math.round(settle * 1000) };
 }
 const SPRING = springCurve(0.44, 0.86);
+// Copying is keyboard-only: ⌘C on macOS, Ctrl+C elsewhere.
+const COPY_KEY = /Mac|iPhone|iPad/i.test(globalThis.navigator?.platform || globalThis.navigator?.userAgent || "") ? "⌘C" : "Ctrl+C";
+function shortcutLabel(node, text) {
+  if (!node) return;
+  const key = document.createElement("kbd");
+  key.textContent = COPY_KEY;
+  node.replaceChildren(key, ` ${text}`);
+}
 function pulseControl(node) {
   playMotion(node, [{ transform: "scale(.86)" }, { transform: "scale(1.1)", offset: .55 }, { transform: "scale(1)" }], { duration: 220 });
 }
@@ -236,6 +244,7 @@ function updateChrome() {
   elements.refreshButton.disabled = state.refreshing;
   elements.clearSearch.hidden = !state.query;
   elements.sortSelect.disabled = state.tab === "boards";
+  sortMenu.sync();
   elements.searchInput.placeholder = state.tab === "boards" ? "搜索图版名称" : "搜索标题、图版或 Pin ID";
   const banner = state.offline ? "连接暂时中断，现有素材保留。正在自动重连，也可点击刷新重试。"
     : (state.transfer?.failed ?? 0) > 0 ? `有 ${state.transfer.failed} 个文件未能收取，原文件仍保留在下载临时区。`
@@ -275,16 +284,14 @@ function applyCopyState(card, assetId) {
   const copied = state.copiedAssetId === assetId;
   card.classList.toggle("is-copying", copying);
   card.classList.toggle("is-copied", copied);
-  const action = card.querySelector(".pin-copy");
-  action.textContent = copying ? "…" : copied ? "✓" : "复制";
-  action.setAttribute("aria-busy", String(copying));
 }
 function updateCopyState(assetId) {
   if (!assetId) return;
   for (const card of elements.content.querySelectorAll(".pin-card")) if (card.dataset.assetId === assetId) applyCopyState(card, assetId);
   if (state.previewAsset?.id === assetId) {
     elements.previewCopy.setAttribute("aria-busy", String(state.pendingCopies.has(assetId)));
-    elements.previewCopy.textContent = state.pendingCopies.has(assetId) ? "复制中…" : "复制路径";
+    if (state.pendingCopies.has(assetId)) elements.previewCopy.textContent = "复制中…";
+    else shortcutLabel(elements.previewCopy, state.copiedAssetId === assetId ? "已复制 ✓" : "复制路径");
   }
 }
 function canSelectReferences() { return Boolean(state.selection) && !state.selectionError; }
@@ -333,7 +340,9 @@ function pinCard(asset) {
     copy.append(title);
   }
   copy.append(meta);
-  body.append(copy, button("pin-copy", "复制", `复制路径：${asset.title}`, () => void copyAsset(asset)));
+  const hint = element("span", "pin-shortcut");
+  shortcutLabel(hint, "复制路径");
+  body.append(copy, hint);
   card.append(frame, body);
   applyCopyState(card, asset.id); applySelectionState(card); applyPickState(card);
   return card;
@@ -471,7 +480,9 @@ async function copyAsset(asset) {
     const result = await api("/api/clipboard", { method: "POST", body: { assetId: asset.id } });
     if (result.status !== "copied" || result.assetId !== asset.id) throw new Error("未收到复制确认，请重试");
     state.copiedAssetId = asset.id;
-    for (const card of elements.content.querySelectorAll(".pin-card")) if (card.dataset.assetId === asset.id) pulseControl(card.querySelector(".pin-copy"));
+    for (const card of elements.content.querySelectorAll(".pin-card")) if (card.dataset.assetId === asset.id) {
+      playMotion(card.querySelector(".thumb-frame"), [{ transform: "scale(1)" }, { transform: "scale(.97)", offset: .35 }, { transform: "scale(1)" }], { duration: 320 });
+    }
     if (state.previewAsset?.id === asset.id) pulseControl(elements.previewCopy);
     showToast("绝对路径已复制 · 回到对话按 ⌘V");
   } catch (error) { showToast(error.message || "复制失败，请重试", true); }
@@ -549,8 +560,12 @@ function updateSelectionStatus() {
   elements.selectionStatus.textContent = state.selectionError ? "未同步" : state.selectionPending ? "保存中…" : unavailable ? "需要检查" : entries.length ? "已就绪" : "";
   elements.selectionStatus.classList.toggle("is-error", Boolean(state.selectionError) || unavailable);
   elements.clearSelection.disabled = !entries.length || Boolean(state.selectionPending) || !state.selection;
-  elements.copySelection.disabled = !entries.length || unavailable || Boolean(state.selectionPending) || Boolean(state.selectionError) || state.copyingSelection;
-  elements.copySelection.textContent = state.copyingSelection ? "复制中…" : "复制路径";
+  const blocked = !entries.length || unavailable || Boolean(state.selectionPending) || Boolean(state.selectionError) || state.copyingSelection;
+  elements.copySelection.dataset.blocked = String(blocked);
+  elements.copySelection.setAttribute("aria-disabled", String(blocked));
+  if (state.copyingSelection) elements.copySelection.textContent = "复制中…";
+  else shortcutLabel(elements.copySelection, "复制路径");
+  document.body.classList.toggle("has-references", entries.length > 0);
   elements.selectionHint.textContent = !referenceSessionId ? "此页可浏览素材；请让 AI 助手为当前任务打开参考篮。"
     : state.selectionError || (unavailable ? "有参考图已变化或不可用，请移除后重新选择。"
       : entries.length ? "回到对话说“使用选中的参考图”" : "点击图片加入参考篮");
@@ -706,7 +721,7 @@ function moveReference(id, offset) {
 }
 async function copySelection() {
   if (state.pendingCopies.size || state.copyingSelection) { showToast("正在复制，请稍候"); return; }
-  if (elements.copySelection.disabled) return;
+  if (elements.copySelection.dataset.blocked === "true") { showToast(elements.selectionHint.textContent || "参考篮暂时不能复制", true); return; }
   clearCopyFeedback();
   state.copyingSelection = true; updateSelectionStatus();
   const expectedCount = state.selection.entries.length;
@@ -1065,13 +1080,139 @@ elements.searchInput.addEventListener("input", () => {
 elements.searchInput.addEventListener("keydown", event => { if (event.key === "Escape") clearSearch(); });
 elements.clearSearch.addEventListener("click", clearSearch);
 elements.sortSelect.addEventListener("change", () => { state.sort = elements.sortSelect.value; void loadPage({ reset: true }); });
-elements.clearSelection.addEventListener("click", () => mutateSelection(() => []));
-elements.copySelection.addEventListener("click", () => void copySelection());
+// Custom sort menu (a native <select> popup cannot be animated). The hidden
+// select stays the source of truth; the menu opens on a spring from its button.
+const sortMenu = (() => {
+  const root = document.querySelector("#sortMenu"), trigger = document.querySelector("#sortButton");
+  const list = document.querySelector("#sortOptions"), label = document.querySelector("#sortLabel");
+  let open = false, closing = null;
+  const options = () => [...(elements.sortSelect?.options ?? [])];
+  function sync() {
+    const current = options().find(option => option.value === elements.sortSelect.value);
+    if (label && current) label.textContent = current.textContent;
+    if (trigger) {
+      trigger.disabled = Boolean(elements.sortSelect.disabled);
+      trigger.setAttribute("aria-label", `素材排序：${current?.textContent ?? ""}`);
+    }
+    if (trigger?.disabled && open) close(false);
+  }
+  function render() {
+    list.replaceChildren(...options().map(option => {
+      const item = element("li", "sort-option", option.textContent);
+      item.setAttribute("role", "option");
+      item.dataset.value = option.value;
+      item.tabIndex = -1;
+      item.setAttribute("aria-selected", String(option.value === elements.sortSelect.value));
+      item.addEventListener("click", () => choose(option.value));
+      return item;
+    }));
+  }
+  function show() {
+    if (!list || trigger.disabled) return;
+    closing?.cancel(); closing = null;
+    render();
+    list.hidden = false; open = true;
+    root.classList.add("is-open");
+    trigger.setAttribute("aria-expanded", "true");
+    playMotion(list, [{ opacity: 0, transform: "translateY(-6px) scale(.92)", filter: "blur(2px)" }, { opacity: 1, transform: "none", filter: "none" }], { duration: SPRING.duration, easing: SPRING.easing });
+    [...list.children].forEach((item, index) => playMotion(item, [{ opacity: 0, transform: "translateY(-4px)" }, { opacity: 1, transform: "none" }], { duration: 240, delay: 40 + index * 30, fill: "backwards" }));
+    (list.querySelector('[aria-selected="true"]') ?? list.firstElementChild)?.focus({ preventScroll: true });
+  }
+  function close(returnFocus = true) {
+    if (!open) return;
+    open = false;
+    root.classList.remove("is-open");
+    trigger.setAttribute("aria-expanded", "false");
+    if (returnFocus) trigger.focus({ preventScroll: true });
+    const animation = playMotion(list, [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(-4px) scale(.96)" }], { duration: 140, easing: "cubic-bezier(.4,0,1,1)", fill: "forwards" });
+    if (!animation) { list.hidden = true; return; }
+    closing = animation;
+    animation.finished.then(() => { if (!open) { list.hidden = true; animation.cancel(); } }, () => {});
+  }
+  function choose(value) {
+    const changed = value !== elements.sortSelect.value;
+    elements.sortSelect.value = value;
+    sync(); close();
+    if (changed) { pulseControl(trigger); elements.sortSelect.dispatchEvent(new Event("change")); }
+  }
+  trigger?.addEventListener("click", () => (open ? close() : show()));
+  trigger?.addEventListener("keydown", event => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); show(); }
+  });
+  list?.addEventListener("keydown", event => {
+    const items = [...list.children], index = items.indexOf(document.activeElement);
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus({ preventScroll: true });
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (items[index]) choose(items[index].dataset.value);
+    } else if (event.key === "Escape" || event.key === "Tab") {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); }
+      close(event.key === "Escape");
+    }
+  });
+  // A click outside only dismisses the menu; it must not also pick a pin.
+  let swallowClick = false;
+  document.addEventListener("pointerdown", event => {
+    if (!open || root.contains(event.target)) return;
+    close(false); swallowClick = true;
+  }, true);
+  document.addEventListener("click", event => {
+    if (!swallowClick) return;
+    swallowClick = false;
+    event.preventDefault(); event.stopPropagation();
+  }, true);
+  document.addEventListener("pointerup", () => setTimeout(() => { swallowClick = false; }, 0), true);
+  return { sync, close, get open() { return open; } };
+})();
+// Clearing (button or Esc) can be undone with ⌘Z / Ctrl+Z for a few seconds.
+let clearedSelection = null;
+function clearReferences() {
+  const ids = state.selection?.entries.map(entry => entry.id) ?? [];
+  if (!ids.length || !canSelectReferences()) return;
+  clearTimeout(clearedSelection?.timer);
+  clearedSelection = { ids, timer: setTimeout(() => { clearedSelection = null; }, 8000) };
+  mutateSelection(() => []);
+  showToast(`已清空参考篮 · ${COPY_KEY.replace("C", "Z")} 撤销`);
+}
+function undoClearReferences() {
+  if (!clearedSelection || state.selection?.entries.length) return false;
+  const { ids, timer } = clearedSelection;
+  clearTimeout(timer); clearedSelection = null;
+  mutateSelection(() => ids);
+  showToast(`已恢复 ${ids.length} 张参考图`);
+  return true;
+}
+elements.clearSelection.addEventListener("click", clearReferences);
+document.addEventListener("keydown", event => {
+  if (event.target?.closest?.("input, textarea, select, [contenteditable=''], [contenteditable='true']")) return;
+  if (event.key === "Escape" && !event.repeat && !state.deleteMode && !elements.previewDialog.open && !sortMenu.open && !document.querySelector(".help-menu[open]")) {
+    if (state.selection?.entries.length) { event.preventDefault(); clearReferences(); }
+    return;
+  }
+  if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && String(event.key).toLowerCase() === "z" && undoClearReferences()) event.preventDefault();
+});
 elements.closePreview.addEventListener("click", () => void dismissPreview());
 elements.previewDialog.addEventListener("cancel", event => { event.preventDefault(); void dismissPreview(); });
 elements.previousPreview.addEventListener("click", () => void navigatePreview(-1));
 elements.nextPreview.addEventListener("click", () => void navigatePreview(1));
-elements.previewCopy.addEventListener("click", () => { if (state.previewAsset) void copyAsset(state.previewAsset); });
+// ⌘C copies what you are looking at: the open preview, else the reference basket,
+// else the pin under the pointer. Text selections and form fields keep native copy.
+let hoveredAssetId = null;
+elements.content.addEventListener("pointerover", event => { hoveredAssetId = event.target?.closest?.(".pin-card")?.dataset.assetId ?? null; });
+elements.content.addEventListener("pointerleave", () => { hoveredAssetId = null; });
+document.addEventListener("keydown", event => {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || String(event.key).toLowerCase() !== "c" || event.repeat) return;
+  if (event.target?.closest?.("input, textarea, select, [contenteditable=''], [contenteditable='true']")) return;
+  if (String(window.getSelection?.() ?? "").trim()) return;
+  event.preventDefault();
+  if (elements.previewDialog.open && state.previewAsset) { void copyAsset(state.previewAsset); return; }
+  if (state.selection?.entries.length) { void copySelection(); return; }
+  const hovered = state.assets.find(asset => asset.id === hoveredAssetId);
+  if (hovered) { void copyAsset(hovered); return; }
+  showToast(`点击图片加入参考篮，或把鼠标移到图片上，再按 ${COPY_KEY} 复制路径`);
+});
 elements.previewSelect.addEventListener("click", () => { if (state.previewAsset) toggleReference(state.previewAsset); });
 elements.previewDelete.addEventListener("click", () => void trashPreviewAsset());
 elements.deleteModeButton.addEventListener("click", () => setDeleteMode(true));
@@ -1130,6 +1271,8 @@ window.addEventListener("beforeunload", () => {
   for (const url of state.thumbnailUrls.values()) URL.revokeObjectURL(url);
   if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
 });
+shortcutLabel(elements.copySelection, "复制路径");
+shortcutLabel(elements.previewCopy, "复制路径");
 if (!token) {
   state.initialLoading = false; state.offline = true;
   elements.content.replaceChildren(emptyState("本地面板会话无效", "请从 Pinterest BoardFlow 插件重新打开。"));
