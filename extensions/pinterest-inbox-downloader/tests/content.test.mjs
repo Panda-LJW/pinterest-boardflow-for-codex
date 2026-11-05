@@ -30,7 +30,7 @@ function harness(send) {
     chrome:{runtime:{lastError:null,onMessage:{addListener(listener){receive=listener;}},sendMessage(message,callback){requests.push(message);send(message,callback);}},storage:{local:{get(_keys,callback){storageCallback=callback;},set(){}}}}
   };
   runInNewContext(shared,context);
-  runInNewContext(source.replace(/\}\)\(\);\s*$/,`globalThis.collector={selected,enqueueAssets,setQuality,root,pageStyle,getJob:()=>currentJobId};})();`),context);
+  runInNewContext(source.replace(/\}\)\(\);\s*$/,`globalThis.collector={selected,enqueueAssets,setQuality,root,pageStyle,pinStates,savedPins,getJob:()=>currentJobId};})();`),context);
   return {...context.collector,nodes,requests,document:context.document,observedTarget,
     mutate:()=>mutationCallback([]),newNode:node,mountWrites:()=>mountWrites,
     click:id=>listeners.get(`${id}:click`)(),receive:message=>receive(message),loadPreferences:values=>storageCallback(values)};
@@ -190,4 +190,38 @@ test('remount preserves all pending single-image jobs and combined progress',asy
  finishJob(h,h.requests[0].jobId);assert.equal(h.nodes.get('progressCount').textContent,'1 / 2');
  assert.equal(h.root.parentNode,h.document.body);
  finishJob(h,h.requests[1].jobId);assert.equal(h.nodes.get('successCount').textContent,'2');
+});
+
+test('queued pins get a badge state that follows background item reports',async()=>{
+ const h=harness((message,callback)=>callback({ok:true,status:status(message.jobId)}));
+ await quick(h,'7');
+ const jobId=h.requests[0].jobId;
+ h.receive({type:'pinterestInboxDownloadProgress',status:status(jobId),item:{pinId:'7',state:'downloading'}});
+ assert.equal(h.pinStates.get('7'),'downloading');
+ h.receive({type:'pinterestInboxDownloadProgress',status:status(jobId,{pending:0,success:1,done:true}),item:{pinId:'7',state:'saved'}});
+ assert.equal(h.pinStates.get('7'),'saved');assert.ok(h.savedPins.has('7'));
+});
+
+test('cancelled pins drop their in-flight badge when the group finishes',async()=>{
+ const h=harness((message,callback)=>callback({ok:true,status:status(message.jobId)}));
+ await quick(h,'8');assert.equal(h.pinStates.get('8'),'queued');
+ finishJob(h,h.requests[0].jobId,{success:0,skipped:1,cancelled:true});
+ assert.equal(h.pinStates.has('8'),false);
+});
+
+test('toolbar toggle hides the panel and stops intercepting pin clicks',()=>{
+ const h=harness(()=>{});
+ h.receive({type:'pinterestInboxTogglePanel'});
+ assert.equal(h.root.style.display,'none');
+ assert.equal(h.document.documentElement.getAttribute('data-pinterest-inbox-enabled'),'false');
+ h.receive({type:'pinterestInboxTogglePanel'});
+ assert.equal(h.root.style.display,'');
+ assert.equal(h.document.documentElement.getAttribute('data-pinterest-inbox-enabled'),'true');
+});
+
+test('saved history, position and collapse load from storage; board button only on board pages',()=>{
+ const h=harness(()=>{});
+ h.loadPreferences({downloadQuality:'light',downloadQualityVersion:2,savedPins:{'5':1},panelCollapsed:true});
+ assert.ok(h.savedPins.has('5'));assert.equal(h.nodes.get('body').hidden,true);
+ assert.equal(h.nodes.get('downloadBoard').hidden,false);assert.equal(h.nodes.get('downloadPin').hidden,true);
 });

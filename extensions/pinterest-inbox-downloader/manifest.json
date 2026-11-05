@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Pinterest BoardFlow Downloader",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "description": "Download Pinterest images into a local Board library for the Pinterest BoardFlow Codex plugin.",
   "permissions": [
     "downloads",

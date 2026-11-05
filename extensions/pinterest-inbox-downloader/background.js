@@ -11,9 +11,15 @@ const queue = [];
 const jobs = new Map();
 const waiters = new Map();
 const desiredFilenames = new Map();
+const resolutions = new Map();
 let activeItem = null;
+let currentItem = null;
 let running = false;
 let offscreenCreation = null;
+let keepAliveTimer = null;
+let savedPinsCache = null;
+const SAVED_PIN_LIMIT = 5000;
+const ITEM_GAP_MS = 200;
 
 function sendToTab(tabId, payload) {
   if (!Number.isInteger(tabId)) return;
@@ -97,8 +103,63 @@ function releasePreparedAsset(prepared) {
   chrome.runtime.sendMessage({ type: "pinterestInboxRevokeImage", requestId: prepared.requestId }, () => void chrome.runtime.lastError);
 }
 
-function report(job) {
-  sendToTab(job.tabId, { type: "pinterestInboxDownloadProgress", status: publicJob(job) });
+function report(job, item = null) {
+  const payload = { type: "pinterestInboxDownloadProgress", status: publicJob(job) };
+  if (item) payload.item = item;
+  sendToTab(job.tabId, payload);
+}
+
+// MV3 service workers stop after ~30s without extension events. A long board
+// queue waits on downloads silently, so ping an API while work is pending and
+// mirror the queue into session storage to resume after an unexpected restart.
+function startKeepAlive() {
+  if (keepAliveTimer || typeof chrome.runtime.getPlatformInfo !== "function") return;
+  keepAliveTimer = setInterval(() => chrome.runtime.getPlatformInfo(() => void chrome.runtime.lastError), 20_000);
+}
+
+function stopKeepAlive() {
+  if (!keepAliveTimer) return;
+  clearInterval(keepAliveTimer);
+  keepAliveTimer = null;
+}
+
+function persistQueue() {
+  const store = chrome.storage?.session;
+  if (!store) return;
+  const pendingJobs = [...jobs.values()].filter((job) => job.pending > 0 && !job.cancelled);
+  const items = currentItem ? [currentItem, ...queue] : [...queue];
+  try {
+    const write = store.set({ queueState: { jobs: pendingJobs, items: items.map(({ jobId, asset }) => ({ jobId, asset })) } });
+    write?.catch?.(() => {});
+  } catch { /* session storage unavailable */ }
+}
+
+const restoreReady = (async () => {
+  const store = chrome.storage?.session;
+  if (!store) return;
+  try {
+    const { queueState } = await store.get("queueState") ?? {};
+    if (!queueState?.items?.length) return;
+    const restoredItems = [];
+    for (const job of queueState.jobs ?? []) if (!jobs.has(job.jobId)) jobs.set(job.jobId, job);
+    for (const item of queueState.items) if (jobs.get(item.jobId)?.pending > 0 && validAsset(item.asset)) restoredItems.push(item);
+    queue.unshift(...restoredItems);
+  } catch { /* nothing to restore */ }
+})();
+
+async function rememberSaved(asset) {
+  const store = chrome.storage?.local;
+  if (!store) return;
+  try {
+    if (!savedPinsCache) savedPinsCache = (await store.get("savedPins"))?.savedPins ?? {};
+    savedPinsCache[asset.pinId] = Date.now();
+    const keys = Object.keys(savedPinsCache);
+    if (keys.length > SAVED_PIN_LIMIT) {
+      keys.sort((left, right) => savedPinsCache[left] - savedPinsCache[right]);
+      for (const key of keys.slice(0, keys.length - SAVED_PIN_LIMIT)) delete savedPinsCache[key];
+    }
+    await store.set({ savedPins: savedPinsCache });
+  } catch { /* history is best-effort */ }
 }
 
 function startDownload(options) {
@@ -169,8 +230,18 @@ chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
   suggest({ filename, conflictAction: "overwrite" });
 });
 
+function resolveFor(item) {
+  if (!resolutions.has(item)) resolutions.set(item, resolveOriginalAsset(item.asset));
+  return resolutions.get(item);
+}
+
 async function runItem(item, job) {
-  const original = await resolveOriginalAsset(item.asset);
+  let original;
+  try {
+    original = await resolveFor(item);
+  } finally {
+    resolutions.delete(item);
+  }
   if (job.cancelled) return "cancelled";
   if (!original) return "unsupported";
   let prepared;
@@ -238,8 +309,12 @@ async function probeOriginal(url) {
 }
 
 async function resolveOriginalAsset(asset) {
-  const candidates = originalImageCandidates(asset.imageUrl);
-  const results = await Promise.all(candidates.map((candidate) => probeOriginal(candidate)));
+  const [preferred, ...others] = originalImageCandidates(asset.imageUrl);
+  if (!preferred) return null;
+  // Most originals exist in the preferred format: one HEAD instead of four.
+  const first = await probeOriginal(preferred);
+  if (first && first.extension !== ".webp") return first;
+  const results = [first, ...await Promise.all(others.map((candidate) => probeOriginal(candidate)))];
   let webpFallback = null;
   for (const result of results) {
     if (!result) continue;
@@ -252,15 +327,28 @@ async function resolveOriginalAsset(asset) {
   return webpFallback;
 }
 
+const ITEM_STATES = { complete: "saved", failed: "failed", "processing-failed": "failed" };
+
 async function pumpQueue() {
   if (running) return;
   running = true;
+  startKeepAlive();
+  await restoreReady;
   while (queue.length > 0) {
     const item = queue.shift();
     const job = jobs.get(item.jobId);
     if (!job || job.cancelled) continue;
+    currentItem = item;
+    persistQueue();
+    // Resolve the next original while this one downloads.
+    if (queue[0] && !jobs.get(queue[0].jobId)?.cancelled) void resolveFor(queue[0]);
+    report(job, { pinId: item.asset.pinId, state: "downloading" });
     const result = await runItem(item, job);
-    if (result === "complete") job.success += 1;
+    currentItem = null;
+    if (result === "complete") {
+      job.success += 1;
+      void rememberSaved(item.asset);
+    }
     else if (result === "failed") job.failed += 1;
     else if (result === "processing-failed") {
       job.failed += 1;
@@ -271,10 +359,13 @@ async function pumpQueue() {
       if (result === "unsupported") job.originalUnavailable += 1;
     }
     job.pending = Math.max(0, job.pending - 1);
-    report(job);
-    if (!job.cancelled && queue.length > 0) await new Promise((resolve) => setTimeout(resolve, 450));
+    report(job, { pinId: item.asset.pinId, state: ITEM_STATES[result] ?? "skipped" });
+    persistQueue();
+    if (!job.cancelled && queue.length > 0) await new Promise((resolve) => setTimeout(resolve, ITEM_GAP_MS));
   }
   running = false;
+  stopKeepAlive();
+  persistQueue();
 }
 
 function validAsset(asset) {
@@ -311,6 +402,7 @@ function enqueue(message, tabId) {
   jobs.set(jobId, job);
   for (const asset of uniqueAssets.values()) queue.push({ jobId, asset });
   report(job);
+  persistQueue();
   void pumpQueue();
   return publicJob(job);
 }
@@ -322,6 +414,7 @@ function cancelJob(jobId) {
   let removed = 0;
   for (let index = queue.length - 1; index >= 0; index -= 1) {
     if (queue[index].jobId !== job.jobId) continue;
+    resolutions.delete(queue[index]);
     queue.splice(index, 1);
     removed += 1;
   }
@@ -331,8 +424,17 @@ function cancelJob(jobId) {
     chrome.downloads.cancel(activeItem.downloadId, () => void chrome.runtime.lastError);
   }
   report(job);
+  persistQueue();
   return publicJob(job);
 }
+
+chrome.action?.onClicked?.addListener((tab) => {
+  if (Number.isInteger(tab?.id) && /^https:\/\/([^/]+\.)?pinterest\.com\//.test(tab.url ?? "")) {
+    sendToTab(tab.id, { type: "pinterestInboxTogglePanel" });
+  } else {
+    chrome.tabs.create({ url: "https://www.pinterest.com/" });
+  }
+});
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "pinterestInboxEnqueue") {
@@ -345,3 +447,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   return false;
 });
+
+void restoreReady.then(() => { if (queue.length) void pumpQueue(); });
