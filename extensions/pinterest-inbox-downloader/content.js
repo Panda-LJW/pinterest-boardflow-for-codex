@@ -32,7 +32,7 @@
     <style>
       :host{--paper:#faf9f6;--surface:#fff;--ink:#242522;--muted:#797b74;--line:#e7e7e0;--soft:#efefe8;--red:#d91c3b;--tint:#fcecef;--green:#0a7f45;color-scheme:light}
       *{box-sizing:border-box}[hidden],.hidden{display:none!important}
-      .panel{width:272px;max-width:calc(100vw - 16px);max-height:calc(100dvh - 24px);overflow-y:auto;padding:12px;border:1px solid var(--line);border-radius:16px;background:var(--paper);box-shadow:0 8px 32px #24252224;color:var(--ink);font-size:12px;line-height:1.5}
+      .panel{width:272px;contain:layout;max-width:calc(100vw - 16px);max-height:calc(100dvh - 24px);overflow-y:auto;padding:12px;border:1px solid var(--line);border-radius:16px;background:var(--paper);box-shadow:0 8px 32px #24252224;color:var(--ink);font-size:12px;line-height:1.5}
       .head,.identity,.head-actions,.selection-row,.progress-label,.setting-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
       .head{cursor:grab;user-select:none;touch-action:none}.head.dragging{cursor:grabbing}
       .identity{justify-content:flex-start;min-width:0}.identity>div{min-width:0}.mark{display:grid;place-items:center;width:28px;height:28px;flex:none;border-radius:50%;background:var(--red);color:#fff;font:700 17px Georgia}
@@ -40,8 +40,9 @@
       .head-actions{gap:4px;flex:none}button{font:inherit;font-weight:600;color:inherit;border:1px solid transparent;cursor:pointer;border-radius:9px;background:var(--soft);padding:8px;transition:background-color 150ms,transform 120ms,box-shadow 150ms}
       button:hover:not(:disabled){background:var(--line)}button:active:not(:disabled){transform:scale(.96)}button:disabled{opacity:.42;cursor:default}button:focus-visible{outline:2px solid var(--red);outline-offset:3px}
       .power,.collapse{padding:4px 8px;height:26px;background:var(--surface);border-color:var(--line);font-size:10px}.power[aria-pressed="false"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}.collapse{width:26px;padding:5px}.collapse svg{display:block;width:14px;fill:none;stroke:currentColor;stroke-width:1.8;transition:transform 180ms}
-      .collapsed{width:auto;padding:5px 5px 5px 6px;border-radius:999px}.collapsed .title,.collapsed .power{display:none}.collapsed .sub{margin:0;color:var(--ink);font-size:11px;font-weight:600;max-width:150px}.collapsed .collapse svg{transform:rotate(180deg)}.collapsed .head{cursor:pointer}
-      .body{padding-top:12px;animation:enter 180ms ease-out}.modes,.qualities{display:grid;gap:4px}.modes{grid-template-columns:1fr 1fr;padding:3px;border-radius:11px;background:var(--soft)}.modes button{padding:6px 5px;background:none;color:var(--muted);font-size:11px}.modes button.active{background:var(--surface);color:var(--ink);box-shadow:0 1px 4px #0000000b}
+      .collapsed{width:auto;padding:6px 7px 6px 7px;border-radius:999px}.collapsed .power{display:none}.collapsed .collapse svg{transform:rotate(180deg)}.collapsed .head{cursor:pointer}
+      .morphing{overflow:hidden!important;display:flex;flex-direction:column;align-items:flex-end;will-change:width,height}.morphing>.head{align-self:stretch;flex:none}.morphing>.body{flex:none}
+      .body{padding-top:12px}.modes,.qualities{display:grid;gap:4px}.modes{grid-template-columns:1fr 1fr;padding:3px;border-radius:11px;background:var(--soft)}.modes button{padding:6px 5px;background:none;color:var(--muted);font-size:11px}.modes button.active{background:var(--surface);color:var(--ink);box-shadow:0 1px 4px #0000000b}
       .hint{margin:7px 2px 10px;font-size:10.5px;color:var(--muted);line-height:1.6}
       .setting-row{width:100%;padding:8px 10px;background:var(--surface);border-color:var(--line);font-size:11px;font-weight:500;text-align:left}.setting-row .value{margin-left:auto;font-weight:650}.setting-row svg{width:12px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;transition:transform 180ms}.setting-row[aria-expanded="true"] svg{transform:rotate(180deg)}
       .quality-panel{margin-top:6px}.qualities{grid-template-columns:repeat(3,1fr)}.qualities button{font-size:10px;padding:7px 3px;background:var(--surface);border-color:var(--line)}.qualities button.active{background:var(--tint);border-color:var(--red);color:var(--red)}
@@ -160,7 +161,7 @@
     multiButton.classList.toggle("active", mode === "multi");
     quickButton.setAttribute("aria-pressed", String(mode === "quick"));
     multiButton.setAttribute("aria-pressed", String(mode === "multi"));
-    selectionArea.hidden = mode !== "multi";
+    toggleSection(selectionArea, mode === "multi");
     shadow.getElementById("modeHint").textContent = mode === "quick"
       ? "点一张存一张，可连续点击排队；⌘ / Ctrl 点击照常打开。" : "点击图片勾选，再点一次取消；选好后统一下载。";
     if (mode === "quick") {
@@ -309,7 +310,23 @@
     'html[data-pinterest-inbox-enabled="true"] a[data-pinterest-inbox-state="history"]::after{padding:2px 7px;background:#0a7f45cc;font-size:11px}'
   ].join("\n");
 
+  // After the extension is reloaded/updated, this script stays in the page but can no
+  // longer reach the background. Stop intercepting clicks so Pinterest works normally.
+  let orphaned = false;
+  function contextAlive() {
+    if (orphaned) return false;
+    try { if (chrome.runtime?.id) return true; } catch { /* invalidated */ }
+    orphaned = true;
+    observer?.disconnect();
+    root.remove();
+    pageStyle.remove();
+    document.documentElement?.removeAttribute("data-pinterest-inbox-enabled");
+    console.info("[Pinterest BoardFlow] 扩展已更新，请刷新页面以加载新版本。");
+    return false;
+  }
+
   function ensureMounted() {
+    if (!contextAlive()) return;
     const html = document.documentElement;
     const pageBody = document.body;
     if (!html || !pageBody) return;
@@ -323,12 +340,15 @@
     }
   }
 
-  new MutationObserver(() => {
+  let observer = null;
+  observer = new MutationObserver(() => {
     ensureMounted();
+    if (orphaned) return;
     refreshPageContext();
     if (!selected.size && !pinStates.size && !savedPins.size) return;
     scheduleMarks();
-  }).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ["href", "data-pinterest-inbox-enabled"] });
+  });
+  observer.observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ["href", "data-pinterest-inbox-enabled"] });
   ensureMounted();
   refreshPageContext();
 
@@ -338,9 +358,11 @@
     return { width: window.innerWidth, height: window.innerHeight };
   }
 
+  // The panel is always anchored by its top-right corner, where the collapse button
+  // sits, so collapsing and expanding pivot on that button wherever the panel is.
   function applyPosition() {
+    root.style.left = "";
     if (!position) {
-      root.style.left = "";
       root.style.right = "14px";
       root.style.top = "78px";
       return;
@@ -348,19 +370,174 @@
     const { width, height } = viewportSize();
     const panelWidth = panel.offsetWidth || 272;
     const panelHeight = panel.offsetHeight || 48;
-    const x = Number.isFinite(width) ? Math.min(Math.max(8, position.x), Math.max(8, width - panelWidth - 8)) : position.x;
-    const y = Number.isFinite(height) ? Math.min(Math.max(8, position.y), Math.max(8, height - Math.min(panelHeight, 120) - 8)) : position.y;
-    root.style.right = "auto";
-    root.style.left = `${Math.round(x)}px`;
-    root.style.top = `${Math.round(y)}px`;
+    const right = Number.isFinite(width) ? Math.min(Math.max(8, position.right), Math.max(8, width - panelWidth - 8)) : position.right;
+    const top = Number.isFinite(height) ? Math.min(Math.max(8, position.top), Math.max(8, height - Math.min(panelHeight, 120) - 8)) : position.top;
+    root.style.right = `${Math.round(right)}px`;
+    root.style.top = `${Math.round(top)}px`;
   }
 
-  function setCollapsed(collapsed, persist = true) {
+  // ---- Motion ----
+  // iOS-style: spring curves, width and height moving together with a small lag
+  // (never strictly one after the other), and content that stays still while the
+  // frame reveals or covers it like a mask. The frame pivots on the collapse button.
+  const SPRING = springCurve(0.42, 0.84);
+  const SPRING_SOFT = springCurve(0.36, 1);
+  const AXIS_LAG = 40;
+  let finishMorph = null;
+  const sectionMotion = new Map();
+
+  function springCurve(response, dampingRatio) {
+    const omega = (2 * Math.PI) / response;
+    const zeta = dampingRatio;
+    const at = (t) => {
+      if (zeta < 1) {
+        const damped = omega * Math.sqrt(1 - zeta * zeta);
+        return 1 - Math.exp(-zeta * omega * t) * (Math.cos(damped * t) + ((zeta * omega) / damped) * Math.sin(damped * t));
+      }
+      return 1 - Math.exp(-omega * t) * (1 + omega * t);
+    };
+    let settle = 0.1;
+    while (settle < 2 && Math.abs(1 - at(settle)) > 0.002) settle += 0.01;
+    const steps = 40;
+    const points = Array.from({ length: steps + 1 }, (_, index) => (index === steps ? 1 : Number(at((settle * index) / steps).toFixed(4))));
+    const supported = Boolean(globalThis.CSS?.supports?.("animation-timing-function", "linear(0, 1)"));
+    return { easing: supported ? `linear(${points.join(", ")})` : "cubic-bezier(.22,1,.36,1)", duration: Math.round(settle * 1000) };
+  }
+
+  function canAnimate() {
+    if (typeof panel.animate !== "function" || typeof panel.getBoundingClientRect !== "function") return false;
+    return !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  }
+
+  function isShown(element) {
+    return Boolean(element?.getClientRects?.().length);
+  }
+
+  function bodyItems() {
+    return [shadow.querySelector(".modes"), shadow.getElementById("modeHint"), qualityToggle, qualityPanel, pinButton,
+      ...selectionArea.children, boardButton, progressArea, status, cancelButton].filter(isShown);
+  }
+
+  function frameOf() {
+    const rect = panel.getBoundingClientRect();
+    const style = getComputedStyle(panel);
+    // The pill uses a 999px radius; clamp to half the height so it interpolates cleanly.
+    const radius = Math.min(parseFloat(style.borderTopLeftRadius) || 0, rect.height / 2, rect.width / 2);
+    return { width: rect.width, height: rect.height, radius, padding: style.padding };
+  }
+
+  function animateFrame(first, last, leadAxis) {
+    const timing = (delay) => ({ duration: SPRING.duration, easing: SPRING.easing, delay, fill: "both" });
+    const widthDelay = leadAxis === "width" ? 0 : AXIS_LAG;
+    const heightDelay = leadAxis === "height" ? 0 : AXIS_LAG;
+    return [
+      panel.animate([{ width: `${first.width}px` }, { width: `${last.width}px` }], timing(widthDelay)),
+      panel.animate([
+        { height: `${first.height}px`, borderRadius: `${first.radius}px`, padding: first.padding },
+        { height: `${last.height}px`, borderRadius: `${last.radius}px`, padding: last.padding }
+      ], timing(heightDelay))
+    ];
+  }
+
+  function startMorph(bodyWidth) {
+    panel.classList.add("morphing");
+    if (bodyWidth) body.style.width = `${bodyWidth}px`;
+  }
+
+  function endMorph() {
+    panel.classList.remove("morphing");
+    body.style.width = "";
+  }
+
+  function runMorph(frames, items, onDone) {
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      onDone?.();
+      frames.forEach((animation) => animation.cancel());
+      items.forEach((animation) => animation.cancel());
+      endMorph();
+      finishMorph = null;
+    };
+    finishMorph = settle;
+    Promise.all(frames.map((animation) => animation.finished)).then(settle, () => {});
+  }
+
+  function expandAnimated() {
+    const first = frameOf();
+    applyCollapsed(false);
+    const last = frameOf();
+    startMorph(body.getBoundingClientRect().width);
+    const frames = animateFrame(first, last, "width");
+    // Controls surface as the frame opens beneath them; content never moves with the frame.
+    const items = [toggleEnabledButton, ...bodyItems()].map((element, index) => element.animate(
+      [{ opacity: 0, transform: "translateY(-6px) scale(.98)", filter: "blur(3px)" }, { opacity: 1, transform: "none", filter: "none" }],
+      { duration: SPRING_SOFT.duration, easing: SPRING_SOFT.easing, delay: 60 + index * 22, fill: "backwards" }
+    ));
+    runMorph(frames, [], null);
+    // Item animations finish on their own; only jump them when interrupted.
+    const interrupt = finishMorph;
+    finishMorph = () => { items.forEach((animation) => animation.finish()); interrupt(); };
+  }
+
+  function collapseAnimated() {
+    const first = frameOf();
+    const bodyWidth = body.getBoundingClientRect().width;
+    // Measure the pill without painting it, then keep the content in place while
+    // the frame folds up from the bottom and pulls in toward the button.
+    applyCollapsed(true);
+    const last = frameOf();
+    applyCollapsed(false);
+    startMorph(bodyWidth);
+    const items = [toggleEnabledButton, ...bodyItems()].map((element) => element.animate(
+      [{ opacity: 1, filter: "none" }, { opacity: 0, filter: "blur(2px)" }],
+      { duration: 160, easing: "cubic-bezier(.3,0,.8,.15)", fill: "forwards" }
+    ));
+    runMorph(animateFrame(first, last, "height"), items, () => applyCollapsed(true));
+  }
+
+  // Sections inside the panel open like an accordion so content below glides.
+  function toggleSection(element, show) {
+    sectionMotion.get(element)?.();
+    if (element.hidden === !show) return;
+    if (!canAnimate() || !isShown(panel)) { element.hidden = !show; return; }
+    if (show) element.hidden = false;
+    const style = getComputedStyle(element);
+    const gap = parseFloat(getComputedStyle(element.parentElement).rowGap) || 0;
+    const open = { height: `${element.getBoundingClientRect().height}px`, marginTop: style.marginTop, opacity: 1, transform: "none" };
+    const closed = { height: "0px", marginTop: `${(parseFloat(style.marginTop) || 0) - gap}px`, opacity: 0, transform: "translateY(-4px)" };
+    element.style.overflow = "hidden";
+    const animation = element.animate(show ? [closed, open] : [open, closed], {
+      duration: show ? SPRING.duration : Math.round(SPRING.duration * 0.7), easing: SPRING.easing, fill: "both"
+    });
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      if (!show) element.hidden = true;
+      animation.cancel();
+      element.style.overflow = "";
+      sectionMotion.delete(element);
+    };
+    sectionMotion.set(element, settle);
+    animation.finished.then(settle, () => {});
+  }
+
+  function applyCollapsed(collapsed) {
     body.hidden = collapsed;
     panel.classList.toggle("collapsed", collapsed);
     collapseButton.setAttribute("aria-expanded", String(!collapsed));
     const label = collapsed ? "展开面板" : "收起面板";
     collapseButton.setAttribute("aria-label", label); collapseButton.title = label;
+  }
+
+  function setCollapsed(collapsed, persist = true, animate = persist) {
+    finishMorph?.();
+    if (animate && canAnimate() && body.hidden !== collapsed) {
+      if (collapsed) collapseAnimated();
+      else expandAnimated();
+    } else applyCollapsed(collapsed);
     if (persist) storageSet({ panelCollapsed: collapsed });
     if (position) requestAnimationFrame(applyPosition);
   }
@@ -377,7 +554,7 @@
   head.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || event.target?.closest?.("button")) return;
     const rect = root.getBoundingClientRect();
-    drag = { dx: event.clientX - rect.left, dy: event.clientY - rect.top, startX: event.clientX, startY: event.clientY, moved: false };
+    drag = { dx: rect.right - event.clientX, dy: event.clientY - rect.top, startX: event.clientX, startY: event.clientY, moved: false };
     head.setPointerCapture?.(event.pointerId);
   });
   head.addEventListener("pointermove", (event) => {
@@ -385,7 +562,7 @@
     if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4) return;
     drag.moved = true;
     head.classList.add("dragging");
-    position = { x: event.clientX - drag.dx, y: event.clientY - drag.dy };
+    position = { right: viewportSize().width - (event.clientX + drag.dx), top: event.clientY - drag.dy };
     applyPosition();
   });
   const endDrag = (event) => {
@@ -394,7 +571,7 @@
     drag = null;
     head.classList.remove("dragging");
     head.releasePointerCapture?.(event.pointerId);
-    if (moved) storageSet({ panelPosition: position });
+    if (moved) storageSet({ panelAnchor: position });
     else if (body.hidden && event.type === "pointerup") setCollapsed(false);
   };
   head.addEventListener("pointerup", endDrag);
@@ -403,7 +580,7 @@
     if (event.target?.closest?.("button")) return;
     position = null;
     applyPosition();
-    storageSet({ panelPosition: null });
+    storageSet({ panelAnchor: null });
   });
   window.addEventListener?.("resize", () => { if (position) applyPosition(); });
 
@@ -500,7 +677,7 @@
 
   document.addEventListener("click", (event) => {
     if (!enabled) return;
-    if (panelHidden) return;
+    if (panelHidden || !contextAlive()) return;
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const target = event.target instanceof Element ? event.target : null;
     const anchor = target?.closest('a[href*="/pin/"]');
@@ -615,11 +792,12 @@
     await enqueueAssets(found, skippedKeys.size, false, notices.join(""));
   }
 
-  quickButton.addEventListener("click", () => setMode("quick"));
-  multiButton.addEventListener("click", () => setMode("multi"));
+  quickButton.addEventListener("click", () => { if (mode !== "quick") setMode("quick"); });
+  multiButton.addEventListener("click", () => { if (mode !== "multi") setMode("multi"); });
   qualityToggle.addEventListener("click", () => {
-    qualityPanel.hidden = !qualityPanel.hidden;
-    qualityToggle.setAttribute("aria-expanded", String(!qualityPanel.hidden));
+    const open = qualityToggle.getAttribute("aria-expanded") !== "true";
+    qualityToggle.setAttribute("aria-expanded", String(open));
+    toggleSection(qualityPanel, open);
   });
   qualityButtons.forEach((button) => button.addEventListener("click", () => {
     if (currentJobId || scanningBoard) return;
@@ -757,11 +935,11 @@
     });
   } catch { /* storage events unavailable */ }
 
-  chrome.storage.local.get(["downloadQuality", "downloadQualityVersion", "savedPins", "panelPosition", "panelCollapsed", "panelHidden"], (values) => {
+  chrome.storage.local.get(["downloadQuality", "downloadQualityVersion", "savedPins", "panelAnchor", "panelCollapsed", "panelHidden"], (values) => {
     values = values ?? {};
     applySavedPins(values.savedPins);
-    if (values.panelPosition && Number.isFinite(values.panelPosition.x) && Number.isFinite(values.panelPosition.y)) {
-      position = values.panelPosition;
+    if (values.panelAnchor && Number.isFinite(values.panelAnchor.right) && Number.isFinite(values.panelAnchor.top)) {
+      position = values.panelAnchor;
       applyPosition();
     }
     if (values.panelCollapsed) setCollapsed(true, false);
