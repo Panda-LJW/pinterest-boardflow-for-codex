@@ -318,7 +318,7 @@
 ## 2026-11-09 — README 文案与排版重写
 
 - 目标：在 2026-11-08 工作流版 README 的基础上，重写文案与排版，让首屏一眼看懂“这是什么、怎么用”。
-- 改动：`README.md` 重写；新增 `docs/images/boardflow-pinterest.png`（由 `output/readme-capture/pinterest-real.png` 处理得到）；删除已无引用的 `boardflow-hero.png`、`boardflow-downloader.png`、`preview.png`。
+- 改动：`README.md` 重写；新增 `docs/images/boardflow-pinterest.png`（由 `output/readme-capture/pinterest-real.png` 处理得到）；删除已无引用的 `boardflow-hero.png`、`boardflow-downloader.png`。`docs/images/preview.png` 是插件测试的图片夹具，保留。
 - 关键决策：真实 Pinterest 截图放在首屏，账号头像以背景色遮挡、赞助 Pin 模糊、其他扩展的浮动图标移除，并按面板边框结构修补；被图标遮住的“清空选择”以同款苹方字体补回。正文按“收集 → 挑选 → 交给 AI”三步组织，快捷键表改为一行一个按键，保存质量、存储位置等移入常见问题。
 - 验证：经 GitHub Markdown API 渲染，在 1280px 与 390px 宽度下检查，11 张图片全部加载，无横向溢出。
 - README SHA-256 前 12 位：`f36e35f1674a`。
