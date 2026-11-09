@@ -1,205 +1,219 @@
-# Pinterest BoardFlow for Codex
+<div align="center">
 
-**Pinterest 下载器 · Board 瀑布流看板 · Codex 视觉参考插件**
+# Pinterest BoardFlow
 
-<p align="center">
-  <img src="docs/images/boardflow-hero.png" alt="Pinterest BoardFlow for Codex 主视觉：Pinterest 下载器、Board 瀑布流和 Codex 参考篮" width="100%">
-</p>
+**把 Pinterest 上的灵感，变成 AI 能按顺序读取的参考图。**
 
-一个面向 **macOS + Chrome** 的本地视觉参考工作流：Chrome 扩展把 Pinterest 静态图片下载到 `PinterestInbox`，插件在本机回环地址提供 Pins / Boards 瀑布流看板；点图片组成有序参考篮，交给 AI 助手按顺序读取原图，也可以按 `⌘C` 复制原文件的绝对路径。同时支持 **Codex** 与 **Claude Code**。
+Chrome 下载器 · 本地瀑布流素材库 · Codex / Claude Code 插件
 
-> **工作流：** Pinterest 原图下载 → 本地长期素材库 → Board 瀑布流浏览 → 有序参考篮 → Codex / Claude Code 读取原图
+![版本 0.5.0](https://img.shields.io/badge/版本-0.5.0-e60023) ![macOS](https://img.shields.io/badge/macOS-Chrome%20116%2B-111111) ![Codex · Claude Code](https://img.shields.io/badge/Codex%20·%20Claude%20Code-插件-6b6b6b) ![MIT](https://img.shields.io/badge/license-MIT-6b6b6b)
 
-## 界面预览
+[快速开始](#install) · [怎么用](#workflow) · [快捷键](#shortcuts) · [常见问题](#faq)
 
-瀑布流看板与下载器面板的截图来自 0.5 版的实际代码，在隔离的本地演示环境中拍摄：页面使用一组公开 Pin 画面和模拟数据，不读取用户素材库，也不连接 Pinterest 账号。“在 Pinterest 页面上直接收集”一图和主视觉拍摄于真实的 Pinterest 公开搜索页（0.4 版面板），账号入口已遮挡。所有截图**不包含用户名、邮箱、私人 Board、个人收藏或本机路径**，Pin 缩略图仅用于说明产品界面，版权归各自权利人所有。
-
-### 在 Codex / Claude Code 中浏览并组装参考图
+</div>
 
 <p align="center">
-  <img src="docs/images/boardflow-dashboard.png" alt="Pinterest BoardFlow 0.5 瀑布流：点击图片加入参考篮，选中的图带编号，下方是悬浮参考篮" width="100%">
+  <img src="docs/images/boardflow-pinterest.png" alt="在已登录的 Pinterest 搜索页上，用 BoardFlow 下载器多选 3 张图片" width="100%">
 </p>
 
-点击图片即可加入参考篮，选中的图带红色描边和编号；悬浮参考篮保留明确顺序，交给 AI 助手时按 `01 / 02 / 03` 读取原文件。按 `⌘C` 复制整组路径，`Esc` 清空。
+<p align="center"><sub>在 Pinterest 上直接勾选、下载。真实页面截图，账号信息已遮挡，广告位已模糊。</sub></p>
+
+在 Pinterest 找到好图之后，想让 AI 参考它们，通常要手动下载、改名，再一张张拖进对话。BoardFlow 把这件事缩成三步：
+
+1. **收集**：在 Pinterest 上点一下，原图就存进本地素材库；
+2. **挑选**：在本地瀑布流看板里搜索、预览，把要用的图按顺序放进参考篮；
+3. **交给 AI**：回到 Codex 或 Claude Code 说一句话，AI 按编号读取这组原图。
+
+<a id="workflow"></a>
+
+## 怎么用
+
+### ① 在 Pinterest 上收集
+
+单张模式下点一张存一张，可以连续点击排队；多选模式勾好后一起下载；在图版页还能自动滚动、整板下载。下载器只取 Pinterest 的 originals 原图，不会用页面缩略图凑数。
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/boardflow-preview.png" alt="Pinterest BoardFlow 原图预览，已选为参考"></td>
-    <td width="50%"><img src="docs/images/boardflow-boards.png" alt="Pinterest BoardFlow Boards 图版聚合视图"></td>
+    <td width="64%"><img src="docs/images/boardflow-downloader-badges.png" alt="Pin 卡片上显示已保存、下载中、排队中和下载过的标记"></td>
+    <td width="36%"><img src="docs/images/boardflow-downloader-panel.png" alt="下载器面板的展开状态和收起后的小胶囊"></td>
   </tr>
   <tr>
-    <td><strong>原图预览</strong><br>右上角放大按钮打开；空格加入参考，双击或按 Z 放大细节，← → 翻图。</td>
-    <td><strong>Boards 聚合</strong><br>保留 Pinterest 图版结构，适合按项目或风格浏览。</td>
+    <td>每张图的状态直接标在卡片上：已保存、下载中、排队中；以前下过的图带一个小 ✓，整板下载时默认跳过。</td>
+    <td>面板可以拖到任意位置，收起后是显示进度的小胶囊。点工具栏图标可隐藏面板，恢复 Pinterest 的正常点击。</td>
   </tr>
 </table>
 
-<table>
-  <tr>
-    <td width="34%"><img src="docs/images/boardflow-side-panel.png" alt="右侧面板宽度下的 Pinterest BoardFlow：滚动后只保留搜索栏"></td>
-    <td width="66%"><strong>为右侧面板设计</strong><br>在 Codex 或 Claude Code 旁边的窄面板里，向下滚动时标题和标签自动收起，只留搜索栏；参考篮浮在下方，不占整行。<br><br>参考篮里拖动缩略图即可调整顺序；排序菜单、参考篮伸缩都使用弹簧动效。</td>
-  </tr>
-</table>
+### ② 在本地看板里挑选
 
-### 在 Pinterest 页面上直接收集
-
-<table>
-  <tr>
-    <td width="66%"><img src="docs/images/boardflow-downloader-badges.png" alt="下载器 0.5 在演示图版上运行：Pin 卡片显示已保存、下载中、排队中和下载过的标记"></td>
-    <td width="34%"><img src="docs/images/boardflow-downloader-panel.png" alt="Pinterest BoardFlow 下载器 0.5 控制面板：展开状态和收起后的胶囊"></td>
-  </tr>
-  <tr>
-    <td><strong>Pin 上直接看到状态</strong><br>已保存 / 下载中 / 排队中一目了然，以前下过的图带小 ✓（本地演示图版，卡片结构与 Pinterest 一致）。</td>
-    <td><strong>紧凑的控制面板</strong><br>可拖动、记住位置；收起后是显示进度的小胶囊。</td>
-  </tr>
-</table>
+插件运行时，下载的图片会自动收进 `~/Pictures/PinterestInbox`，按图版分好文件夹。看板里可以搜索标题、图版或 Pin ID，按时间或标题排序。
 
 <p align="center">
-  <img src="docs/images/boardflow-downloader.png" alt="Pinterest BoardFlow 下载器在真实 Pinterest 公开搜索页上多选图片（0.4 版面板）" width="100%">
+  <img src="docs/images/boardflow-dashboard.png" alt="瀑布流看板：选中的图片带红色编号，下方的悬浮参考篮按顺序排好 3 张图" width="100%">
 </p>
 
-真实 Pinterest 公开搜索页上的多选效果（0.4 版面板）。
+**点一下图片就加入参考篮**，再点一次移除。红色编号就是 AI 读取的顺序，在参考篮里拖动缩略图即可调整，最多 10 张。
 
-## 当前状态
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/boardflow-preview.png" alt="原图预览：显示这是第 2 张参考图"></td>
+    <td width="50%"><img src="docs/images/boardflow-boards.png" alt="图版视图：按编辑设计、人像摄影、视觉拼贴浏览"></td>
+  </tr>
+  <tr>
+    <td><strong>看清细节</strong>：点卡片右上角的放大按钮打开原图，双击或按 <kbd>Z</kbd> 放大到原尺寸。</td>
+    <td><strong>按图版浏览</strong>：保留你在 Pinterest 上的分类，按项目或风格找图。</td>
+  </tr>
+</table>
 
-当前版本：插件 **0.5.0**（Codex 清单为 `0.5.0+codex.<构建时间>`），Chrome 下载器 **0.5.0**。内部插件 ID `pinterest-reference-panel`、MCP 工具名和 `PinterestInbox` 目录保持不变，现有安装与素材兼容。
+### ③ 回到对话，交给 AI
 
-### 0.5.0 瀑布流看板
+在装好插件的新对话里说“打开 Pinterest BoardFlow”，看板会在旁边打开。选好图之后，回到同一个对话提需求就行：
 
-- **点图片即选择**：单击图片加入参考篮，再点一次移除；选中的图有红色描边和编号角标。右上角的放大按钮打开原图预览。
-- **悬浮参考篮**：参考篮是悬浮在下方的圆角浮条，宽度随张数伸缩；空着时缩成一颗小胶囊。拖动缩略图调整顺序。
-- **更大的看图空间**：向下滚动时标题和标签收起，只留搜索栏；向上滚动恢复。
-- **键盘操作**：
+> 用选中的参考图，先逐张看一遍。参考第 1 张的配色和第 2 张的版式，帮我设计一张活动海报。
 
-  | 按键 | 作用 |
-  | --- | --- |
-  | `⌘C` | 复制路径：预览打开时复制这张；参考篮有图时复制整组；否则复制鼠标所在的那张 |
-  | `Esc` | 清空参考篮（`⌘Z` 在 8 秒内撤销） |
-  | `空格` | 预览里加入 / 移除参考 |
-  | 双击 / `Z` | 预览里放大到原图尺寸，可拖动查看细节 |
-  | `←` `→` | 预览里切换图片，到达已加载末尾时自动加载下一页 |
-  | `Delete` ×2 | 预览里把图片移到废纸篓 |
+AI 会通过插件拿到这组原图的本地路径，并实际打开每张图再动手。也可以按 <kbd>⌘C</kbd> 复制整组路径，粘贴到任何地方。
 
-- 排序改为带动画的下拉菜单；没有真实标题的 `pin 123…` 不再显示编号标题；缩略图并发加载更快。
+<table>
+  <tr>
+    <td width="30%"><img src="docs/images/boardflow-side-panel.png" alt="在窄面板中，滚动后只保留搜索栏，参考篮悬浮在底部"></td>
+    <td width="70%"><strong>为侧边栏设计</strong><br><br>放在 Codex 或 Claude Code 旁边的窄面板里也好用：向下滚动时标题和标签自动收起，只留搜索栏；参考篮悬浮在底部，不占整行。<br><br>每个对话有自己的参考篮。选图不会自动发消息，你说话时 AI 才读取。</td>
+  </tr>
+</table>
 
-### 0.5.0 Chrome 下载器
+<a id="install"></a>
 
-- 面板更紧凑：保存质量收进可展开的一行，多选控件只在多选模式出现，整板下载只在图版页出现。
-- 面板可拖动并记住位置，收起后是显示进度的小胶囊，展开 / 收起以开合键为支点做弹簧动画。
-- Pin 卡片上直接显示 排队中 / 下载中 / ✓ 已保存 / 下载失败；以前下过的图显示小 ✓，整板下载默认跳过（按住 ⇧ 全部重下）。
-- Pin 详情页可“下载这张 Pin”；点击工具栏图标隐藏 / 显示面板。
-- 后台队列在运行时保持活跃并镜像到会话存储，意外重启后继续下载；原图探测通常只需 1 个请求，并预取下一张。
-- 重新加载扩展后未刷新的页面里，旧面板会自动让开，不再拦截点击。详见[下载器说明](extensions/pinterest-inbox-downloader/README.md)。
+## 快速开始
 
-### 使用方法
+需要 **macOS**、**Chrome 116+**、**Node.js 20+**，以及 Codex 或 Claude Code 其中之一。
 
-在加载了插件的新任务 / 会话中说“打开 Pinterest BoardFlow”，点击 2–3 张图片加入参考篮；回到对话说“使用选中的参考图，按顺序分析”。AI 助手会读取本任务的有序原图列表，再实际查看原图。重新打开同一参考篮会复用原会话，另一个任务会创建空篮；插件进程重启后需要重新选图。主流程的设计与边界见 [SPEC](SPEC.md) 和 [UX 方案](docs/UX-PLAN.md)，验证与变更证据见 [LOG](LOG.md)。
-
-素材工作台还支持完整素材库搜索、图版筛选、三种排序、系统深色、多选删除（移到废纸篓，可在访达中放回），以及最多 10 张的有序参考篮。Codex 中由宿主决定是否固定在右侧；若自动打开只进入排队，可在可见内嵌浏览器中打开工具返回的本地 URL。Claude Code 桌面版的内置浏览器无法打开本机地址时，会改用系统默认浏览器打开。
-
-### 历史版本
-
-- **0.4.2** 新增删图：工具栏垃圾桶进入多选删除，选中的图片在右下角叠成一摞，展开后点两次删除；大图预览里也可单张删除。
-- **0.4.1** 品牌更新为 Pinterest BoardFlow。
-- 2026-09-09 已在真实登录态 Pinterest、Chrome 扩展和 Codex 可见内嵌浏览器中完成端到端检查：连续点图去重、多选后取消、参考篮经 MCP 按相同顺序返回原文件，批量复制的路径与系统剪贴板逐字节一致（含中文文件名）。
-
-## 已实现能力
-
-- Chrome 单张、多选和整板自动滚动下载，面板内可暂停/启用采集；
-- 只下载 Pinterest CDN `originals` 原图；优先原生 JPG/PNG，仅原图只有 WebP 时保留 WebP，不转码、不改假后缀、不回退缩略图；
-- 以 `<标题>__pin-<Pin ID>.<格式>` 保存原图，同时保持可读性、去重与旧版文件兼容；
-- Chrome 固定写入 `~/Downloads/PinterestInbox/<board>/` 临时区，Codex 插件校验后自动收取到 `~/Pictures/PinterestInbox/<board>/` 长期库；
-- 静态图片过滤、串行限速、取消、失败重试一次和结果统计；
-- MCP 启动完整扫描、运行期监听、10 秒周期校准与手动刷新；
-- 收取时保留图版结构，SHA-256 校验成功后才清理临时副本；同名同内容去重，同名不同内容增加短哈希且不覆盖；
-- `sips` 生成 480px JPEG 缩略图并独立缓存；
-- 旧 MCP Pins / Boards 窄栏瀑布流与固定顶部栏；
-- 旧 MCP 面板可把 Pin 安全复制到 `references/pinterest/<board>/` 并发送相对路径，作为回滚备用。
-
-## 0.4.0 已验收能力
-
-- 扩展面板提供“原图 / JPEG 高清 / 智能轻量”并记住用户选择；旧版本首次升级会迁移到默认“智能轻量”；
-- 智能轻量遇到 WebP originals 直接保留原字节；其他格式只有在 2048px/JPEG80 或透明 PNG 候选件确实更小时才采用；
-- `open_pinterest_inbox_web` 在当前 MCP 进程内懒启动仅绑定 `127.0.0.1` 动态端口的本地网页，并可在 Codex 右侧内嵌浏览器打开；
-- 本地网页与 MCP 共用唯一 Inbox watcher；Pins / Boards 完整分页，监听状态和新素材自动刷新；
-- 单击 Pin 只提交已索引 `assetId`，服务端重新确认路径边界后用 `pbcopy` 写入 canonical absolute path；不复制、不压缩、不修改素材，也不自动发送消息；
-- 停止网页只释放 HTTP 服务，Inbox 监听和旧 MCP 回滚面板继续可用。
-
-## 安装 Chrome 扩展
-
-1. 从 [Releases](https://github.com/Panda-LJW/pinterest-boardflow-for-codex/releases/latest) 下载 `pinterest-boardflow-downloader-<版本>.zip` 并解压；或者直接使用仓库里的 `extensions/pinterest-inbox-downloader/`；
-2. 在 Chrome 打开 `chrome://extensions`，开启“开发者模式”；
-3. 点击“加载已解压的扩展程序”，选择解压出的文件夹（或仓库里的 `extensions/pinterest-inbox-downloader/`）。
-
-打开 Pinterest 后，右上方会出现 Pinterest BoardFlow 控制面板。默认“单张模式”会拦截普通 Pin 单击并下载，默认保存质量是“智能轻量”；需要正常打开 Pin 时，点击面板上的“暂停”，或点击工具栏上的扩展图标隐藏面板。多选与整板模式会显示成功、跳过、无 originals 原图、图片处理失败和待处理数量。
-
-**更新扩展**：在 `chrome://extensions` 里点扩展的“重新加载”，再**刷新已经打开的 Pinterest 页面**。只刷新网页不会加载新的后台程序。
-
-## 安装 Codex 插件
+**1. 获取仓库**
 
 ```bash
 git clone https://github.com/Panda-LJW/pinterest-boardflow-for-codex.git
 cd pinterest-boardflow-for-codex
 npm ci
-npm test
+```
+
+**2. 安装 Chrome 下载器**
+
+打开 `chrome://extensions`，开启右上角的“开发者模式”，点“加载已解压的扩展程序”，选择仓库里的 `extensions/pinterest-inbox-downloader/`。也可以从 [Releases](https://github.com/Panda-LJW/pinterest-boardflow-for-codex/releases/latest) 下载 zip，解压后加载。
+
+**3. 安装 AI 插件**
+
+在 Codex 中使用，在仓库目录运行：
+
+```bash
 codex plugin marketplace add "$PWD"
 codex plugin add pinterest-reference-panel@personal
 ```
 
-插件更新后需要开启一个新的 Codex 任务，新的 MCP 工具才会加载。主路线是调用 `open_pinterest_inbox_web`，保存返回的 `referenceSessionId`，把带 `?ref=<id>` 的 URL 打开到 Codex 可见内嵌浏览器。用户选图并提出需求后，调用 `get_pinterest_reference_selection` 读取同一参考篮。按 `⌘C` 复制路径再按 `⌘V` 粘贴的方式作为备用。旧 `render_pinterest_reference_panel` 继续保留为工作区导入回滚方案。
-
-> **Codex 按版本号缓存本地插件。** 安装时 Codex 会把插件复制到 `~/.codex/plugins/cache/personal/pinterest-reference-panel/<版本号>/`，之后一直使用这份副本。修改代码后，需要更新 `plugins/pinterest-reference-panel/.codex-plugin/plugin.json` 中的 `version`（例如更新 `+codex.` 后面的构建时间），再完全退出并重新打开 Codex，它才会复制新文件。Codex 复制的是仓库当前检出的文件，切换分支也会影响它拿到的版本。
-
-## 安装到 Claude Code
-
-在 Claude Code 中运行：
+在 Claude Code 中使用，在 Claude Code 里输入（把路径换成仓库的实际位置）：
 
 ```text
 /plugin marketplace add /path/to/pinterest-boardflow-for-codex
 /plugin install pinterest-reference-panel@panda-ljw
 ```
 
-安装后开启新会话，输入 `/pinterest-reference-panel:pinterest-references` 或直接说“打开 Pinterest BoardFlow”。Claude Code 直接从仓库运行插件；修改页面文件后，重新打开面板（或开启新会话）即可看到新版本。
+**4. 开始使用**
 
-## 本地目录
+打开 Pinterest，右上角会出现下载器面板。再开一个新对话，说“打开 Pinterest BoardFlow”。
 
-```text
-~/Downloads/PinterestInbox/                       # Chrome 临时下载区
-~/Pictures/PinterestInbox/                        # 唯一长期素材库
-~/Library/Caches/pinterest-reference-panel/       # 可安全清理的缩略图与引用衍生缓存
-<workspace>/references/pinterest/<board>/         # 仅旧 MCP 回滚链路使用
-```
+<a id="shortcuts"></a>
 
-可在启动 MCP 时通过 `PINTEREST_INBOX_DIR` 覆盖长期素材库，通过 `PINTEREST_INBOX_STAGING_DIR` 覆盖临时下载区。Chrome 扩展仍受 Downloads API 限制，只能下载到浏览器 Downloads 根目录下的相对路径。
+## 快捷键
 
-## 本地开发与测试
+| 按键 | 作用 |
+| --- | --- |
+| 点击图片 | 加入 / 移出参考篮 |
+| <kbd>⌘C</kbd> | 复制路径：预览中复制当前这张；参考篮有图时复制整组；否则复制鼠标下的那张 |
+| <kbd>Esc</kbd> | 清空参考篮（预览打开时则是关闭预览） |
+| <kbd>⌘Z</kbd> | 8 秒内撤销清空 |
+| <kbd>空格</kbd> | 预览中：加入 / 移出参考篮 |
+| <kbd>←</kbd> <kbd>→</kbd> | 预览中：上一张 / 下一张 |
+| 双击 · <kbd>Z</kbd> | 预览中：放大到原尺寸，再按一次还原 |
+| <kbd>Delete</kbd> 两次 | 预览中：把这张图移到废纸篓（可在访达里放回） |
+
+<a id="faq"></a>
+
+## 常见问题
+
+<details>
+<summary><strong>图片存在哪里？会不会被改动？</strong></summary>
+<br>
+
+| 位置 | 用途 |
+| --- | --- |
+| `~/Downloads/PinterestInbox/` | Chrome 的临时下载区 |
+| `~/Pictures/PinterestInbox/` | 长期素材库，按图版分文件夹 |
+| `~/Library/Caches/pinterest-reference-panel/` | 缩略图缓存，可以随时清理 |
+
+插件会把临时区的文件校验后移进长期库。同名同内容自动去重，同名不同内容另存一份，不会覆盖旧图。文件名是“标题__pin-编号”，在访达里也好找。浏览、选图、复制路径都不会改动原图。
+
+</details>
+
+<details>
+<summary><strong>保存质量选哪个？</strong></summary>
+<br>
+
+| 选项 | 效果 |
+| --- | --- |
+| 智能轻量（默认） | WebP 原样保存；其他格式缩到最长边 2048px，只有确实更小时才替换 |
+| 原图 | 原始分辨率、原始字节、原始格式 |
+| JPEG 高清 | 原分辨率的 JPEG；透明图片保存为 PNG |
+
+视频 Pin 不会下载。更多细节见[下载器说明](extensions/pinterest-inbox-downloader/README.md)。
+
+</details>
+
+<details>
+<summary><strong>看板没有在 AI 应用里打开？</strong></summary>
+<br>
+
+Codex 会尽量在右侧内嵌浏览器打开；如果只是排队没显示，让助手在可见浏览器里打开它返回的本地地址即可。Claude Code 桌面版的内置浏览器打不开本机地址时，会改用系统浏览器。选完图回到原对话继续说就行。
+
+</details>
+
+<details>
+<summary><strong>更新之后还是旧界面？</strong></summary>
+<br>
+
+- **Chrome 下载器**：在 `chrome://extensions` 里点“重新加载”，再刷新已打开的 Pinterest 页面。
+- **Codex**：Codex 按插件版本号缓存。拉取新版后，完全退出并重新打开 Codex，再开新对话。
+- **Claude Code**：开一个新会话，再打开看板。
+
+</details>
+
+<details>
+<summary><strong>会动我的 Pinterest 账号吗？</strong></summary>
+<br>
+
+不会。BoardFlow 不调用 Pinterest API，不读取账号凭证，也不会保存、修改或删除你在 Pinterest 上的任何内容。看板只在本机 `127.0.0.1` 上运行，不对局域网开放。
+
+</details>
+
+## 开发
 
 ```bash
-npm ci
-npm run check
-npm test
+npm run check   # 类型检查
+npm test        # 构建插件，并运行插件与下载器的全部测试
 ```
 
-`npm test` 会构建插件并依次运行插件测试与下载器测试。测试覆盖 Inbox 扫描与监听、缩略图路径复核、本地 HTTP 回环/会话/Origin 边界、剪贴板解析、Boards 完整分页、MCP 并发停止/重开与 EOF/SIGTERM 生命周期、旧工作区边界、UI 过期请求防护、扩展路径清理和下载队列。真实 Downloads 写入、Pictures 长期库存取、中文路径复制、参考篮会话到 MCP 原文件读取均已完成人工端到端验收，详见 [SPEC.md](SPEC.md)。
+| 目录 | 内容 |
+| --- | --- |
+| [`extensions/pinterest-inbox-downloader/`](extensions/pinterest-inbox-downloader/) | Chrome 下载器（Manifest V3） |
+| [`plugins/pinterest-reference-panel/`](plugins/pinterest-reference-panel/) | AI 插件：MCP 服务、本地看板与测试 |
+| [`SPEC.md`](SPEC.md) · [`docs/UX-PLAN.md`](docs/UX-PLAN.md) | 设计边界与验收标准 |
+| [`LOG.md`](LOG.md) | 实施与验证记录 |
 
-## 仓库结构
+<details>
+<summary>环境变量与插件接口</summary>
+<br>
 
-- `extensions/pinterest-inbox-downloader/`：Manifest V3 Chrome 下载扩展；
-- `plugins/pinterest-reference-panel/`：Codex / Claude Code 插件、MCP 服务、UI、测试和运行时 bundle；
-- `.agents/plugins/marketplace.json`：仓库内 Codex marketplace；
-- `.claude-plugin/marketplace.json`：仓库内 Claude Code marketplace；
-- `SPEC.md`：稳定边界、接口和验收标准；
-- `LOG.md` / `LOG-INDEX.md`：施工决策、验证和回滚记录。
+- `PINTEREST_INBOX_DIR` 覆盖长期素材库位置，`PINTEREST_INBOX_STAGING_DIR` 覆盖临时下载区。
+- `open_pinterest_inbox_web` 打开看板并创建参考篮；`get_pinterest_reference_selection` 按同一个 `referenceSessionId` 返回有序的本地文件路径。
+- 修改代码后要让 Codex 用上新版，需更新 `plugins/pinterest-reference-panel/.codex-plugin/plugin.json` 里的 `version`，再重启 Codex。
 
-## 边界
+</details>
 
-- 不接 Pinterest API，不读取或保存账号凭证；
-- 不搜索全站内容，不创建、保存、修改或删除 Pin；
-- 不下载视频；
-- MCP 与本地网页不接受任意 URL 或任意写入路径；
-- 本地网页只绑定 `127.0.0.1`，默认使用动态端口，不提供 CORS；
-- MCP 工具本身不强制宿主布局；Codex 桌面端支持时由代理把本地 URL 打开到右侧内嵌浏览器；
-- 复制路径只写入系统剪贴板，页面不会向对话框注入内容或自动发送消息。
+---
 
-## 声明
-
-这是一个非官方实验项目，与 Pinterest 无隶属或背书关系。请确认你有权下载和使用相应素材。
+<sub>“怎么用”中的看板与下载器截图，来自 0.5 版代码在本地演示环境中的运行画面，使用公开 Pin 图片和模拟数据，不含任何账号或私人素材。图片版权归各自权利人所有。这是一个非官方的个人项目，与 Pinterest 没有隶属或背书关系，请确认你有权下载和使用相应素材。</sub>
