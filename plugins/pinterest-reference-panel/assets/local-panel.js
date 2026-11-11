@@ -640,11 +640,11 @@ function renderSelection() {
     ], spring);
   }
   if (wasEmpty !== elements.referenceTray.classList.contains("is-empty")) {
-    for (const part of elements.referenceTray.querySelectorAll(".tray-info, .tray-actions")) playMotion(part, [{ opacity: 0 }, { opacity: 1 }], { duration: 240, delay: 60 });
+    for (const part of elements.referenceTray.querySelectorAll(".tray-info, .tray-actions")) playMotion(part, [{ opacity: 0 }, { opacity: 1 }], { duration: 240, delay: 60, fill: "backwards" });
   }
   for (const [index, { node, before, after }] of items.entries()) {
     if (!before) {
-      playMotion(node, [{ opacity: 0, transform: "scale(.6)" }, { opacity: 1, transform: "scale(1)" }], { ...spring, delay: 40 + Math.min(index, 4) * 20 });
+      playMotion(node, [{ opacity: 0, transform: "scale(.6)" }, { opacity: 1, transform: "scale(1)" }], { ...spring, delay: 40 + Math.min(index, 4) * 20, fill: "backwards" });
     } else {
       const x = before.left - after.left, y = before.top - after.top;
       if (Math.abs(x) > 1 || Math.abs(y) > 1) playMotion(node, [{ transform: `translate(${x}px,${y}px)` }, { transform: "translate(0,0)" }], spring);
