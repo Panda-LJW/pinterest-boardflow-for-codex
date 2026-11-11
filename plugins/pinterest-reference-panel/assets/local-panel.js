@@ -15,7 +15,7 @@ const state = {
   copiedAssetId: null, pendingCopies: new Set(),
   thumbnailUrls: new Map(), thumbnailFailures: new Set(), thumbnailRequests: new Map(),
   thumbnailEpoch: 0, thumbnailActive: 0, thumbnailWaiters: [],
-  selection: null, selectionError: null, selectionPending: 0, selectionChain: Promise.resolve(), copyingSelection: false,
+  selection: null, selectionError: null, selectionPending: 0, selectionSlow: false, selectionSlowTimer: null, selectionChain: Promise.resolve(), copyingSelection: false,
   previewAsset: null, previewUrl: null, previewGeneration: 0, previewController: null,
   previewClosing: false, previewCloseToken: 0,
   trashArmedId: null, trashArmTimer: null, trashingId: null,
@@ -57,7 +57,8 @@ const SPRING = springCurve(0.44, 0.86);
 // Copying is keyboard-only: ⌘C on macOS, Ctrl+C elsewhere.
 const COPY_KEY = /Mac|iPhone|iPad/i.test(globalThis.navigator?.platform || globalThis.navigator?.userAgent || "") ? "⌘C" : "Ctrl+C";
 function shortcutLabel(node, text) {
-  if (!node) return;
+  if (!node || (node.dataset && node.dataset.label === text)) return;
+  if (node.dataset) node.dataset.label = text;
   const key = document.createElement("kbd");
   key.textContent = COPY_KEY;
   node.replaceChildren(key, ` ${text}`);
@@ -561,14 +562,16 @@ function updateSelectionStatus() {
   const entries = state.selection?.entries ?? [];
   const unavailable = entries.some(entry => entry.status !== "ready");
   elements.selectionCount.textContent = `${entries.length} / 10`;
-  elements.selectionStatus.textContent = state.selectionError ? "未同步" : state.selectionPending ? "保存中…" : unavailable ? "需要检查" : entries.length ? "已就绪" : "";
+  const status = state.selectionError ? "未同步" : state.selectionPending && state.selectionSlow ? "保存中…" : unavailable ? "需要检查" : entries.length ? "已就绪" : "";
+  if (elements.selectionStatus.textContent !== status) elements.selectionStatus.textContent = status;
   elements.selectionStatus.classList.toggle("is-error", Boolean(state.selectionError) || unavailable);
-  elements.clearSelection.disabled = !entries.length || Boolean(state.selectionPending) || !state.selection;
-  const blocked = !entries.length || unavailable || Boolean(state.selectionPending) || Boolean(state.selectionError) || state.copyingSelection;
-  elements.copySelection.dataset.blocked = String(blocked);
-  elements.copySelection.setAttribute("aria-disabled", String(blocked));
-  if (state.copyingSelection) elements.copySelection.textContent = "复制中…";
-  else shortcutLabel(elements.copySelection, "复制路径");
+  // A pending save still blocks copying, but must not dim the controls: every pick
+  // saves for a few milliseconds, which made them flash.
+  elements.clearSelection.disabled = !entries.length || !state.selection;
+  const unusable = !entries.length || unavailable || Boolean(state.selectionError);
+  elements.copySelection.dataset.blocked = String(unusable || Boolean(state.selectionPending) || state.copyingSelection);
+  setAttr(elements.copySelection, "aria-disabled", String(unusable));
+  shortcutLabel(elements.copySelection, state.copyingSelection ? "复制中…" : "复制路径");
   document.body.classList.toggle("has-references", entries.length > 0);
   elements.selectionHint.textContent = !referenceSessionId ? "此页可浏览素材；请让 AI 助手为当前任务打开参考篮。"
     : state.selectionError || (unavailable ? "有参考图已变化或不可用，请移除后重新选择。"
@@ -660,7 +663,12 @@ function updateDockOverflow() {
 elements.selectionList.addEventListener("scroll", updateDockOverflow, { passive: true });
 function mutateSelection(transform) {
   if (!state.selection || state.selectionError) { showToast(state.selectionError || "参考篮尚未就绪", true); return; }
-  state.selectionPending += 1; updateSelectionStatus();
+  state.selectionPending += 1;
+  if (state.selectionPending === 1) {
+    clearTimeout(state.selectionSlowTimer);
+    state.selectionSlowTimer = setTimeout(() => { state.selectionSlow = true; updateSelectionStatus(); }, 300);
+  }
+  updateSelectionStatus();
   state.selectionChain = state.selectionChain.then(async () => {
     if (state.selectionError) return;
     const assetIds = transform(state.selection.entries.map(entry => entry.id));
@@ -675,6 +683,7 @@ function mutateSelection(transform) {
     }
   }).catch(() => {}).finally(async () => {
     state.selectionPending -= 1;
+    if (!state.selectionPending) { clearTimeout(state.selectionSlowTimer); state.selectionSlow = false; }
     if (!state.selectionPending && state.selectionError) await loadSelection();
     updateSelectionStatus();
   });
@@ -738,7 +747,10 @@ function moveReference(id, offset) {
 }
 async function copySelection() {
   if (state.pendingCopies.size || state.copyingSelection) { showToast("正在复制，请稍候"); return; }
-  if (elements.copySelection.dataset.blocked === "true") { showToast(elements.selectionHint.textContent || "参考篮暂时不能复制", true); return; }
+  if (elements.copySelection.dataset.blocked === "true") {
+    showToast(state.selectionPending ? "正在保存参考篮，请稍候" : elements.selectionHint.textContent || "参考篮暂时不能复制", !state.selectionPending);
+    return;
+  }
   clearCopyFeedback();
   state.copyingSelection = true; updateSelectionStatus();
   const expectedCount = state.selection.entries.length;
