@@ -4,10 +4,31 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { PanelDaemonClient } from "../dist/server.bundle.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const pluginRoot = new URL("../", import.meta.url);
+
+async function cleanupDaemon(root, inboxRoot) {
+  const previous = { ...process.env };
+  try {
+    process.env.PINTEREST_INBOX_DIR = inboxRoot;
+    process.env.PINTEREST_PANEL_STATE_DIR = join(root, "state");
+    const daemon = new PanelDaemonClient();
+    if ((await daemon.status()).pid) {
+      await daemon.call("shutdown");
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (!(await daemon.status()).pid) break;
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+    }
+  } finally {
+    for (const key of ["PINTEREST_INBOX_DIR", "PINTEREST_PANEL_STATE_DIR"]) {
+      if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key];
+    }
+  }
+}
 
 async function openWebSession(url) {
   const response = await fetch(url);
@@ -61,12 +82,13 @@ test("stdio MCP lists Inbox content and safely imports one indexed image", async
     command: process.execPath,
     args: ["dist/server.bundle.js"],
     cwd: pluginRoot,
-    env: { ...process.env, PINTEREST_INBOX_DIR: inboxRoot },
+    env: { ...process.env, PINTEREST_INBOX_DIR: inboxRoot, PINTEREST_PANEL_STATE_DIR: join(root, "state") },
     stderr: "pipe"
   });
   const client = new Client({ name: "inbox-test", version: "0.2.0" });
   context.after(async () => {
     await client.close();
+    await cleanupDaemon(root, inboxRoot);
     await rm(root, { recursive: true, force: true });
   });
   await client.connect(transport);
@@ -123,6 +145,8 @@ test("stdio MCP lists Inbox content and safely imports one indexed image", async
   assert.equal(read.isError, undefined);
   assert.equal(read.structuredContent.files[0].assetId, assetId);
   assert.match(read.structuredContent.files[0].path, /editorial\/456__signal-poster\.jpg$/);
+  const unversioned = await client.callTool({ name: "get_pinterest_reference_selection", arguments: { referenceSessionId } });
+  assert.equal(unversioned.structuredContent.files[0].assetId, assetId);
   const empty = await client.callTool({ name: "get_pinterest_reference_selection", arguments: { referenceSessionId: other.structuredContent.referenceSessionId } });
   assert.equal(empty.isError, true);
   const stale = await client.callTool({ name: "get_pinterest_reference_selection", arguments: { referenceSessionId, expectedRevision: 0 } });
@@ -137,7 +161,7 @@ test("stdio MCP lists Inbox content and safely imports one indexed image", async
   assert.equal(stoppedStatus.structuredContent.status, "stopped");
   assert.equal(stoppedStatus.structuredContent.url, undefined);
   const afterClose = await client.callTool({ name: "get_pinterest_reference_selection", arguments: { referenceSessionId } });
-  assert.equal(afterClose.structuredContent.revision, 1, "HTTP close keeps reference sessions in the MCP process");
+  assert.equal(afterClose.structuredContent.revision, 1, "HTTP close keeps durable reference sessions");
 
   const imported = await client.callTool({
     name: "import_pinterest_reference",
@@ -154,7 +178,7 @@ test("stdio MCP lists Inbox content and safely imports one indexed image", async
   assert.match(resource.contents[0].text, /Pinterest BoardFlow/);
 });
 
-test("stdio EOF shuts down an active local panel without waiting for a signal", async () => {
+test("stdio EOF exits promptly while the independent local panel remains reachable", async () => {
   const root = await mkdtemp(join(tmpdir(), "pinterest-mcp-eof-test-"));
   const inboxRoot = join(root, "PinterestInbox");
   await mkdir(inboxRoot, { recursive: true });
@@ -163,7 +187,7 @@ test("stdio EOF shuts down an active local panel without waiting for a signal", 
     command: process.execPath,
     args: ["dist/server.bundle.js"],
     cwd: pluginRoot,
-    env: { ...process.env, PINTEREST_INBOX_DIR: inboxRoot },
+    env: { ...process.env, PINTEREST_INBOX_DIR: inboxRoot, PINTEREST_PANEL_STATE_DIR: join(root, "state") },
     stderr: "pipe"
   });
   const stderr = [];
@@ -180,8 +204,10 @@ test("stdio EOF shuts down an active local panel without waiting for a signal", 
     await client.close();
     assert.ok(Date.now() - startedAt < 1_800, "EOF cleanup should finish before the client termination fallback");
     assert.equal(child.exitCode, 0, Buffer.concat(stderr).toString("utf8"));
+    assert.equal((await fetch(opened.structuredContent.url)).status, 200);
   } finally {
     await client.close();
+    await cleanupDaemon(root, inboxRoot);
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -194,7 +220,7 @@ test("open waits for an in-flight stop and never overlaps local panel instances"
     command: process.execPath,
     args: ["dist/server.bundle.js"],
     cwd: pluginRoot,
-    env: { ...process.env, PINTEREST_INBOX_DIR: inboxRoot },
+    env: { ...process.env, PINTEREST_INBOX_DIR: inboxRoot, PINTEREST_PANEL_STATE_DIR: join(root, "state") },
     stderr: "pipe"
   });
   const client = new Client({ name: "inbox-lifecycle-test", version: "0.4.0" });
@@ -225,19 +251,18 @@ test("open waits for an in-flight stop and never overlaps local panel instances"
     assert.equal(stopped.structuredContent.status, "stopped");
     assert.equal(reopened.structuredContent.status, "running");
     assert.deepEqual(completionOrder, ["stop", "open"], "the old service must finish stopping before reopen resolves");
-    if (new URL(reopened.structuredContent.url).origin !== new URL(first.structuredContent.url).origin) {
-      await assert.rejects(fetch(first.structuredContent.url));
-    }
+    assert.equal(new URL(reopened.structuredContent.url).origin, new URL(first.structuredContent.url).origin);
     assert.equal((await fetch(reopened.structuredContent.url)).status, 200);
     await client.callTool({ name: "stop_pinterest_inbox_web", arguments: {} });
   } finally {
     heldRequest?.destroy();
     await client.close();
+    await cleanupDaemon(root, inboxRoot);
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("SIGTERM closes the local panel and exits cleanly", async () => {
+test("SIGTERM exits the MCP process without interrupting the local panel", async () => {
   const root = await mkdtemp(join(tmpdir(), "pinterest-mcp-signal-test-"));
   const inboxRoot = join(root, "PinterestInbox");
   await mkdir(inboxRoot, { recursive: true });
@@ -245,7 +270,7 @@ test("SIGTERM closes the local panel and exits cleanly", async () => {
     command: process.execPath,
     args: ["dist/server.bundle.js"],
     cwd: pluginRoot,
-    env: { ...process.env, PINTEREST_INBOX_DIR: inboxRoot },
+    env: { ...process.env, PINTEREST_INBOX_DIR: inboxRoot, PINTEREST_PANEL_STATE_DIR: join(root, "state") },
     stderr: "pipe"
   });
   const stderr = [];
@@ -263,9 +288,10 @@ test("SIGTERM closes the local panel and exits cleanly", async () => {
     const result = await closed;
     assert.ok(Date.now() - startedAt < 1_800, "signal cleanup should finish promptly");
     assert.deepEqual(result, { code: 0, signal: null }, Buffer.concat(stderr).toString("utf8"));
-    await assert.rejects(fetch(opened.structuredContent.url));
+    assert.equal((await fetch(opened.structuredContent.url)).status, 200);
   } finally {
     await client.close();
+    await cleanupDaemon(root, inboxRoot);
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -278,7 +304,7 @@ test("local panel startup errors are sanitized in MCP tool output", async () => 
     command: process.execPath,
     args: ["dist/server.bundle.js"],
     cwd: pluginRoot,
-    env: { ...process.env, PINTEREST_INBOX_DIR: inboxRoot, PINTEREST_PANEL_PORT: "70000" },
+    env: { ...process.env, PINTEREST_INBOX_DIR: inboxRoot, PINTEREST_PANEL_STATE_DIR: join(root, "state"), PINTEREST_PANEL_PORT: "70000" },
     stderr: "pipe"
   });
   const client = new Client({ name: "inbox-start-error-test", version: "0.4.0" });
@@ -292,6 +318,67 @@ test("local panel startup errors are sanitized in MCP tool output", async () => 
     assert.equal(result.content[0].text.includes("70000"), false);
   } finally {
     await client.close();
+    await cleanupDaemon(root, inboxRoot);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("concurrent MCP hosts share one service and recover the same URL and basket after a daemon crash", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pinterest-mcp-recovery-test-"));
+  const inboxRoot = join(root, "PinterestInbox");
+  await mkdir(inboxRoot);
+  await writeFile(join(inboxRoot, "asset__pin-1.jpg"), "image-fixture");
+  const env = { ...process.env, PINTEREST_INBOX_DIR: inboxRoot, PINTEREST_PANEL_STATE_DIR: join(root, "state") };
+  const clients = [];
+  async function connect() {
+    const client = new Client({ name: "recovery-test", version: "1" });
+    clients.push(client);
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: ["dist/server.bundle.js"], cwd: pluginRoot, env, stderr: "pipe" }));
+    return client;
+  }
+  try {
+    const [a, b] = await Promise.all([connect(), connect()]);
+    const [first, other] = await Promise.all([a, b].map(client => client.callTool({ name: "open_pinterest_inbox_web", arguments: {} })));
+    assert.equal(first.isError, undefined, JSON.stringify(first));
+    assert.equal(other.isError, undefined, JSON.stringify(other));
+    const opened = first.structuredContent;
+    assert.equal(other.structuredContent.pid, opened.pid);
+    assert.equal(other.structuredContent.port, opened.port);
+    assert.notEqual(other.structuredContent.referenceSessionId, opened.referenceSessionId);
+    const browser = await openWebSession(opened.url);
+    const headers = { Cookie: browser.cookie, "X-Pinterest-Panel-Token": browser.token,
+      "X-Pinterest-Reference-Session": opened.referenceSessionId,
+      Origin: new URL(opened.url).origin, "Content-Type": "application/json" };
+    const listing = await a.callTool({ name: "list_pinterest_inbox", arguments: {} });
+    const assetId = listing.structuredContent.assets[0].id;
+    assert.equal((await fetch(new URL("/api/references", opened.url), { method: "POST", headers,
+      body: JSON.stringify({ assetIds: [assetId], revision: 0 }) })).status, 200);
+    await Promise.all([a.close(), b.close()]);
+    assert.equal((await fetch(new URL("/api/references", opened.url), { headers })).status, 200);
+    const c = await connect();
+    const beforeCrash = await c.callTool({ name: "open_pinterest_inbox_web", arguments: { referenceSessionId: opened.referenceSessionId } });
+    assert.equal(beforeCrash.structuredContent.url, opened.url);
+    process.kill(opened.pid, "SIGKILL");
+    // Wait for the OS to release the singleton owner before asking a fresh host to reconnect.
+    for (let attempt = 0; attempt < 100; attempt++) {
+      try { process.kill(opened.pid, 0); }
+      catch (error) { if (error.code === "ESRCH") break; throw error; }
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    const recovered = await c.callTool({ name: "open_pinterest_inbox_web", arguments: { referenceSessionId: opened.referenceSessionId } });
+    assert.equal(recovered.isError, undefined, JSON.stringify(recovered));
+    assert.equal(recovered.structuredContent.url, opened.url);
+    assert.notEqual(recovered.structuredContent.pid, opened.pid);
+    const read = await c.callTool({ name: "get_pinterest_reference_selection", arguments: { referenceSessionId: opened.referenceSessionId, expectedRevision: 1 } });
+    assert.equal(read.structuredContent.files[0].assetId, assetId);
+    assert.equal((await fetch(new URL("/api/references", opened.url), { headers })).status, 401);
+    const refreshed = await openWebSession(opened.url);
+    const selection = await fetch(new URL("/api/references", opened.url), { headers: { ...headers,
+      Cookie: refreshed.cookie, "X-Pinterest-Panel-Token": refreshed.token } });
+    assert.equal((await selection.json()).entries[0].id, assetId);
+  } finally {
+    await Promise.all(clients.map(client => client.close()));
+    await cleanupDaemon(root, inboxRoot);
     await rm(root, { recursive: true, force: true });
   }
 });

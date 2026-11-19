@@ -1,4 +1,4 @@
-const token = document.querySelector('meta[name="pinterest-panel-token"]')?.content ?? "";
+let token = document.querySelector('meta[name="pinterest-panel-token"]')?.content ?? "";
 const referenceSessionId = document.querySelector('meta[name="pinterest-reference-session"]')?.content ?? "";
 const DEFAULT_API_TIMEOUT_MS = 8_000;
 const THUMBNAIL_TIMEOUT_MS = 20_000;
@@ -96,6 +96,29 @@ function displayTitle(asset) {
 function viewKey() { return JSON.stringify([state.tab, state.boardId, state.query, state.sort]); }
 function selectedIndex(assetId) { return state.selection?.entries.findIndex(entry => entry.id === assetId) ?? -1; }
 
+let sessionRefresh = null;
+async function refreshSession(failedToken) {
+  if (token !== failedToken) return;
+  if (!sessionRefresh) sessionRefresh = (async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), DEFAULT_API_TIMEOUT_MS);
+    try {
+      const response = await fetch(`/?ref=${encodeURIComponent(referenceSessionId)}`, {
+        credentials: "same-origin", cache: "no-store", signal: controller.signal
+      });
+      if (!response.ok) throw new Error("本地面板暂时无法重新连接");
+      const html = await response.text();
+      const renewed = html.match(/name="pinterest-panel-token" content="([A-Za-z0-9_-]{32})"/)?.[1];
+      if (!renewed) throw new Error("本地面板会话无效");
+      token = renewed;
+      // The index version can reset after a service restart, so discard old thumbnails too.
+      state.version = null;
+      clearThumbnailCache();
+    } finally { clearTimeout(timeout); }
+  })().finally(() => { sessionRefresh = null; });
+  await sessionRefresh;
+}
+
 async function api(path, options = {}) {
   const controller = new AbortController();
   const cancel = () => controller.abort();
@@ -113,6 +136,11 @@ async function api(path, options = {}) {
       body: options.body === undefined ? undefined : JSON.stringify(options.body), signal: controller.signal
     });
     if (!response.ok) {
+      if ((response.status === 401 || response.status === 403) && !options.authRetried) {
+        await refreshSession(headers.get("X-Pinterest-Panel-Token"));
+        // Reads are safe to retry. Clipboard, trash and selection writes need a fresh user action.
+        if ((options.method ?? "GET") === "GET") return await api(path, { ...options, authRetried: true });
+      }
       let message = `请求失败（${response.status}）`;
       try { message = (await response.json()).error || message; } catch (error) { if (error?.name === "AbortError") throw error; }
       const error = new Error(message);
@@ -1091,7 +1119,7 @@ async function pollStatus() {
     const suffix = Number.isInteger(knownVersion) ? `?knownVersion=${knownVersion}` : "";
     const result = await api(`/api/status${suffix}`);
     mergeSummary(result, false); state.offline = false; state.pollDelay = 2000; updateChrome();
-    if ((!result.unchanged || state.pageError) && !state.pageLoading) await loadPage({ reset: true });
+    if ((!result.unchanged || state.pageError || knownVersion === null || state.version !== knownVersion) && !state.pageLoading) await loadPage({ reset: true });
     if (referenceSessionId) await loadSelection();
   } catch { state.offline = true; state.pollDelay = Math.min(10_000, Math.max(2000, state.pollDelay * 2)); updateChrome(); }
   finally { state.polling = false; schedulePoll(); }

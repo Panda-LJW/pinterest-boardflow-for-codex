@@ -5,12 +5,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { InboxService } from "./inbox.js";
-import { startLocalPanelServer, type LocalPanelServerHandle } from "./local-panel-server.js";
+import { PanelDaemonClient, runPanelDaemon } from "./panel-daemon.js";
 import { WorkspaceRegistry } from "./workspace.js";
-import { ReferenceError, ReferenceSessions, REFERENCE_SESSION_PATTERN } from "./references.js";
+import { ReferenceError, REFERENCE_SESSION_PATTERN } from "./references.js";
 
 export { InboxService, parseImageDimensions, parseInboxFilename } from "./inbox.js";
 export { startLocalPanelServer, writeTextToMacClipboard } from "./local-panel-server.js";
+export { PanelDaemonClient, daemonPaths } from "./panel-daemon.js";
 export { WorkspaceRegistry } from "./workspace.js";
 export { ReferenceSessions, ReferenceError } from "./references.js";
 
@@ -20,36 +21,7 @@ const panelHtml = readFileSync(join(moduleDirectory, "../assets/pinterest-panel.
 
 export const inbox = new InboxService();
 export const workspaces = new WorkspaceRegistry();
-export const references = new ReferenceSessions(inbox);
-let localPanel: LocalPanelServerHandle | null = null;
-let localPanelStart: Promise<LocalPanelServerHandle> | null = null;
-let localPanelStop: Promise<boolean> | null = null;
-
-async function ensureLocalPanel() {
-  if (localPanelStop) await localPanelStop;
-  if (localPanel) return localPanel;
-  if (!localPanelStart) {
-    const configuredPort = process.env.PINTEREST_PANEL_PORT ? Number(process.env.PINTEREST_PANEL_PORT) : 0;
-    localPanelStart = startLocalPanelServer({ inbox, references, port: configuredPort }).then((handle) => {
-      localPanel = handle;
-      return handle;
-    }).finally(() => { localPanelStart = null; });
-  }
-  return localPanelStart;
-}
-
-async function stopLocalPanel() {
-  if (!localPanelStop) {
-    localPanelStop = (async () => {
-      const handle = localPanel ?? (localPanelStart ? await localPanelStart : null);
-      if (!handle) return false;
-      await handle.close();
-      if (localPanel === handle) localPanel = null;
-      return true;
-    })().finally(() => { localPanelStop = null; });
-  }
-  return localPanelStop;
-}
+export const daemon = new PanelDaemonClient();
 
 function reportInternalError(context: string, error: unknown) {
   const detail = error instanceof Error ? error.stack ?? error.message : String(error);
@@ -57,10 +29,10 @@ function reportInternalError(context: string, error: unknown) {
 }
 
 export const server = new McpServer(
-  { name: "pinterest-reference-panel", version: "0.5.0" },
+  { name: "pinterest-reference-panel", version: "0.5.1" },
   {
     capabilities: { resources: {}, tools: {} },
-    instructions: "When Pinterest BoardFlow (formerly Pinterest Inbox) is selected or mentioned, an unqualified request to open it (including 打开项目) means launch its running Board-style masonry material panel, unless the user explicitly asks for source code, documentation or project management. Call open_pinterest_inbox_web, then actually open the complete returned URL in the host's visible browser for THIS task: in Codex call open_in_codex with target {type: 'browser', url} and placement 'right'; in the Claude desktop app call the built-in browser preview_start with that url; without an in-app browser run `open '<url>'`. Discover deferred tools when needed. Opening README or locating a repository does not fulfill this request. Do not use desktop automation on the host app or start a second InboxService as a workaround. Report opened only after the browser action succeeds; distinguish queued from displayed. Retain the returned referenceSessionId for THIS task. When the user asks to use selected references, call get_pinterest_reference_selection with that exact ID, then read the returned original local image files before visual analysis or generation. Use numbered files in returned order. Never guess a session or read another task's basket. To reopen the same basket pass its referenceSessionId; omitting it creates an empty independent basket. Recheck the returned revision before using references if the user changes selection. Selecting images never sends a message. Do not copy, re-encode or modify originals. Path copying remains an explicit fallback. Never accept arbitrary source URLs or paths."
+    instructions: "When Pinterest BoardFlow (formerly Pinterest Inbox) is selected or mentioned, an unqualified request to open it (including 打开项目) means launch its running Board-style masonry material panel, unless the user explicitly asks for source code, documentation or project management. Call open_pinterest_inbox_web, then actually open the complete returned URL in the host's visible browser for THIS task: in Codex call open_in_codex with target {type: 'browser', url} and placement 'right'; in the Claude desktop app call the built-in browser preview_start with that url; without an in-app browser run `open '<url>'`. Discover deferred tools when needed. Opening README or locating a repository does not fulfill this request. Do not use desktop automation on the host app or start a second InboxService as a workaround. Report opened only after the browser action succeeds; distinguish queued from displayed. The web service survives MCP disconnects and reference baskets persist across restarts. Retain the returned referenceSessionId for THIS task. When the user asks to use selected references, call get_pinterest_reference_selection with that exact ID, then read the returned original local image files before visual analysis or generation. Use numbered files in returned order. Never guess a session or read another task's basket. To reopen the same basket pass its referenceSessionId; omitting it creates an empty independent basket. Recheck the returned revision before using references if the user changes selection. Selecting images never sends a message. Do not copy, re-encode or modify originals. Path copying remains an explicit fallback. Never accept arbitrary source URLs or paths."
   }
 );
 
@@ -94,7 +66,7 @@ async function panelResult(options: {
   registerWorkspace?: boolean;
 }) {
   if (!options.forceRescan && options.knownVersion !== undefined) {
-    const summary = inbox.getSummary();
+    const summary = await daemon.call("summary");
     if (summary.version === options.knownVersion) {
       return {
         structuredContent: { mode: "inbox" as const, unchanged: true, ...summary },
@@ -103,7 +75,7 @@ async function panelResult(options: {
       };
     }
   }
-  const pageResult = await inbox.getPage({
+  const pageResult = await daemon.call("page", {
     ...(options.cursor ? { cursor: options.cursor } : {}),
     ...(options.limit ? { limit: options.limit } : {}),
     ...(options.forceRescan !== undefined ? { forceRescan: options.forceRescan } : {})
@@ -175,18 +147,17 @@ server.registerTool(
   },
   async ({ referenceSessionId }) => {
     try {
-      const handle = await ensureLocalPanel();
-      const id = referenceSessionId ? references.require(referenceSessionId).id : references.create();
-      const url = `${handle.url}?ref=${id}`;
+      const opened = await daemon.call("open", referenceSessionId);
+      const { url, referenceSessionId: id } = opened;
       return {
-        structuredContent: { status: "running", url, referenceSessionId: id, host: handle.host, port: handle.port, inbox: inbox.getSummary() },
+        structuredContent: opened,
         content: [{ type: "text" as const, text: `Pinterest BoardFlow 服务已就绪：${url}。下一步必须用宿主的可见浏览器打开该 URL：Codex 调用 open_in_codex，target={type:"browser",url:"${url}"}，placement="right"；Claude 桌面版调用内置浏览器 preview_start，url="${url}"；没有内嵌浏览器时执行 open "${url}"。服务就绪不等于看板已显示，请根据浏览器工具结果报告已打开或已排队。保留本任务的参考会话 ${id}。用户选图后，通过 get_pinterest_reference_selection 读取该会话，再读取原图。` }]
       };
     } catch (error) {
       reportInternalError("local panel start failed", error);
       return {
         isError: true,
-        content: [{ type: "text" as const, text: error instanceof ReferenceError ? error.message : "无法启动 Pinterest BoardFlow 本地网页；请检查插件安装后重试。" }]
+        content: [{ type: "text" as const, text: error instanceof ReferenceError && error.status < 500 ? error.message : "无法启动 Pinterest BoardFlow 本地网页；请检查插件安装后重试。" }]
       };
     }
   }
@@ -205,7 +176,7 @@ server.registerTool(
   },
   async ({ referenceSessionId, expectedRevision }) => {
     try {
-      const selected = await references.resolve(referenceSessionId, expectedRevision);
+      const selected = await daemon.call("selection", referenceSessionId, expectedRevision);
       return {
         structuredContent: selected,
         content: [{ type: "text" as const, text: `已确认 ${selected.files.length} 张参考图（版本 ${selected.revision}）。请按顺序读取原图：\n${selected.files.map(file => `${file.number}. ${file.title}\n${file.path}`).join("\n")}` }]
@@ -225,21 +196,12 @@ server.registerTool(
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   },
   async () => {
-    const status = localPanelStop ? "stopping" : localPanel ? "running" : "stopped";
+    const result = await daemon.status();
     return {
-      structuredContent: {
-        status,
-        ...(localPanel ? { url: localPanel.url, host: localPanel.host, port: localPanel.port } : {}),
-        inbox: inbox.getSummary()
-      },
-      content: [{
-        type: "text" as const,
-        text: status === "stopping"
-          ? "Pinterest BoardFlow 本地网页正在停止。"
-          : localPanel
-            ? `Pinterest BoardFlow 本地网页正在运行：${localPanel.url}`
-            : "Pinterest BoardFlow 本地网页当前未启动。"
-      }]
+      structuredContent: result,
+      content: [{ type: "text" as const, text: result.status === "running"
+        ? `Pinterest BoardFlow 本地网页正在运行：${result.url}`
+        : result.status === "stopping" ? "Pinterest BoardFlow 本地网页正在停止。" : "Pinterest BoardFlow 本地网页当前未启动。" }]
     };
   }
 );
@@ -248,7 +210,7 @@ server.registerTool(
   "stop_pinterest_inbox_web",
   {
     title: "停止 Pinterest BoardFlow 本地网页",
-    description: "停止当前任务的本地网页服务；Inbox 监听和旧 MCP 面板保持可用。",
+    description: "停止共享本地网页服务（所有已打开的看板都会暂时断开）；参考篮和 Inbox 监听保留。",
     inputSchema: {},
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     _meta: {
@@ -258,9 +220,10 @@ server.registerTool(
   },
   async () => {
     try {
-      const stopped = await stopLocalPanel();
+      const result = await daemon.call("stop");
+      const stopped = result.wasRunning;
       return {
-        structuredContent: { status: "stopped", wasRunning: stopped, inbox: inbox.getSummary() },
+        structuredContent: result,
         content: [{ type: "text" as const, text: stopped ? "Pinterest BoardFlow 本地网页已停止；Inbox 监听仍在运行。" : "Pinterest BoardFlow 本地网页原本就未启动。" }]
       };
     } catch (error) {
@@ -300,7 +263,7 @@ server.registerTool(
     }
   },
   async ({ assetId, workspaceToken }) => {
-    const asset = await inbox.resolveAsset(assetId);
+    const asset = await daemon.call("asset", assetId);
     if (!asset) return { isError: true, content: [{ type: "text" as const, text: "未找到该 Inbox 图片，请刷新后重试。" }] };
     try {
       const imported = await workspaces.importAsset(asset, workspaceToken);
@@ -316,7 +279,6 @@ server.registerTool(
 );
 
 export async function startServer() {
-  await inbox.start();
   const transport = new StdioServerTransport();
   const requestShutdown = () => {
     void shutdown().catch((error: unknown) => {
@@ -334,7 +296,6 @@ export async function startServer() {
   } catch (error) {
     process.stdin.off("end", requestShutdown);
     process.stdin.off("close", requestShutdown);
-    await inbox.close();
     throw error;
   }
 }
@@ -343,17 +304,8 @@ let shutdownPromise: Promise<void> | null = null;
 
 async function shutdown() {
   if (!shutdownPromise) {
-    shutdownPromise = (async () => {
-      try {
-        await stopLocalPanel();
-      } finally {
-        try {
-          await inbox.close();
-        } finally {
-          await server.close();
-        }
-      }
-    })();
+    // The host owns only this stdio connection. The shared service has its own lifetime.
+    shutdownPromise = Promise.resolve().then(() => server.close());
   }
   return shutdownPromise;
 }
@@ -368,11 +320,13 @@ function shutdownFromSignal() {
   );
 }
 
-process.once("SIGINT", shutdownFromSignal);
-process.once("SIGTERM", shutdownFromSignal);
+if (!process.argv.includes("--panel-daemon")) {
+  process.once("SIGINT", shutdownFromSignal);
+  process.once("SIGTERM", shutdownFromSignal);
+}
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  startServer().catch((error: unknown) => {
+  (process.argv.includes("--panel-daemon") ? runPanelDaemon() : startServer()).catch((error: unknown) => {
     process.stderr.write(`[pinterest-reference-panel] ${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
     process.exitCode = 1;
   });

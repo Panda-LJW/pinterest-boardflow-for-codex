@@ -225,3 +225,41 @@ test("slow search results cannot replace a newer query result", async () => {
   assert.equal(harness.state.assets[0].id, "new");
   assert.equal(harness.state.pageLoading, false);
 });
+
+test("an expired browser token is renewed once and reads reconnect without reloading the page", async () => {
+  const renewed = "r".repeat(32);
+  const calls = [];
+  const harness = createHarness(async (path, options) => {
+    calls.push({ path, options });
+    if (path.startsWith("/?ref=")) return { ok: true, text: async () => `<meta name="pinterest-panel-token" content="${renewed}">` };
+    if (options.headers.get("X-Pinterest-Panel-Token") !== renewed) {
+      return { ok: false, status: 401, json: async () => ({ error: "expired" }) };
+    }
+    return { ok: true, json: async () => ({ recovered: true }) };
+  });
+  harness.state.version = 42;
+  const results = await Promise.all([harness.api("/api/status"), harness.api("/api/references")]);
+  assert.equal(results.every(result => result.recovered), true);
+  assert.equal(calls.filter(call => call.path.startsWith("/?ref=")).length, 1);
+  assert.equal(harness.state.version, null, "service recovery invalidates the old index version");
+  assert.equal(harness.timers.size, 0);
+});
+
+test("authentication recovery does not replay mutations and failed recovery can be retried later", async () => {
+  let recoveryAttempts = 0;
+  let writes = 0;
+  const harness = createHarness(async (path) => {
+    if (path.startsWith("/?ref=")) {
+      recoveryAttempts++;
+      if (recoveryAttempts === 1) throw new Error("offline");
+      return { ok: true, text: async () => `<meta name="pinterest-panel-token" content="${"s".repeat(32)}">` };
+    }
+    writes++;
+    return { ok: false, status: 403, json: async () => ({ error: "expired" }) };
+  });
+  await assert.rejects(harness.api("/api/clipboard", { method: "POST", body: { assetId: "a" } }), /offline/);
+  await assert.rejects(harness.api("/api/clipboard", { method: "POST", body: { assetId: "a" } }), /expired/);
+  assert.equal(writes, 2, "each explicit call writes at most once");
+  assert.equal(recoveryAttempts, 2);
+  assert.equal(harness.timers.size, 0);
+});
