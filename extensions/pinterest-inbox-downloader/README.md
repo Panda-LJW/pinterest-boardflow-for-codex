@@ -1,6 +1,6 @@
 # Pinterest BoardFlow Downloader
 
-面向 macOS + Chrome 的精简 Manifest V3 扩展。它只在 Pinterest 页面上收集静态图片，并通过 Chrome Downloads API 写入：
+面向 macOS / Windows + Chrome 的精简 Manifest V3 扩展。它只在 Pinterest 页面上收集静态图片，并通过 Chrome Downloads API 写入：
 
 ```text
 ~/Downloads/PinterestInbox/<board-slug>/<safe-title>__pin-<pin-id>.<ext>

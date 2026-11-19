@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { writeWindowsClipboard } from "./platform.js";
 import { constants, existsSync } from "node:fs";
 import { open, readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -166,8 +167,9 @@ function runClipboardCommand(command: "pbcopy" | "pbpaste", input: string, deadl
 }
 
 export async function writeTextToMacClipboard(text: string) {
+  if (process.platform === "win32") return writeTextToWindowsClipboard(text);
   if (process.platform !== "darwin" || !existsSync("/usr/bin/pbcopy") || !existsSync("/usr/bin/pbpaste")) {
-    throw new HttpError(503, "当前系统没有可用的 macOS 剪贴板服务");
+    throw new HttpError(503, "当前系统没有可用的剪贴板服务");
   }
   if (!text || text.includes("\0") || Buffer.byteLength(text, "utf8") > 16_384) {
     throw new HttpError(400, "待复制路径无效或过长");
@@ -183,6 +185,24 @@ export async function writeTextToMacClipboard(text: string) {
     throw new HttpError(503, "未能确认路径已写入剪贴板，请重新复制");
   }
 }
+
+// Windows: Set-Clipboard via PowerShell, then read back and compare, like pbcopy/pbpaste.
+async function writeTextToWindowsClipboard(text: string) {
+  if (!text || text.includes("\0") || Buffer.byteLength(text, "utf8") > 16_384) {
+    throw new HttpError(400, "待复制路径无效或过长");
+  }
+  try {
+    const copied = await writeWindowsClipboard(text, 8_000);
+    // The clipboard may normalise line endings and append a trailing newline.
+    const normalise = (value: string) => value.replace(/\r\n/g, "\n").replace(/\n+$/, "");
+    if (normalise(copied) !== normalise(text)) throw new Error("clipboard verification failed");
+  } catch {
+    throw new HttpError(503, "未能确认路径已写入剪贴板，请重新复制");
+  }
+}
+
+/** Platform-neutral name; the old export stays for compatibility. */
+export const writeTextToClipboard = writeTextToMacClipboard;
 
 export async function startLocalPanelServer(options: LocalPanelServerOptions): Promise<LocalPanelServerHandle> {
   const moduleDirectory = dirname(fileURLToPath(import.meta.url));
@@ -325,7 +345,7 @@ export async function startLocalPanelServer(options: LocalPanelServerOptions): P
         if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).join() !== "revision"
           || !Number.isInteger((body as { revision?: unknown }).revision)) throw new HttpError(400, "复制请求需要参考篮版本号");
         const selected = await references.resolve(referenceSessionId(), (body as { revision: number }).revision);
-        await clipboardWriter(selected.files.map(file => file.path).join("\n"));
+        await clipboardWriter(selected.files.map(file => file.path).join(process.platform === "win32" ? "\r\n" : "\n"));
         sendJson(response, 200, { status: "copied", count: selected.files.length });
         return;
       }
@@ -378,7 +398,7 @@ export async function startLocalPanelServer(options: LocalPanelServerOptions): P
             trashed.push({ assetId, title: asset.title });
           }
         }
-        if (!trashed.length && failed.length) throw new HttpError(503, "未能移到废纸篓，原图保持不变，请重试");
+        if (!trashed.length && failed.length) throw new HttpError(503, `未能移到${process.platform === "win32" ? "回收站" : "废纸篓"}，原图保持不变，请重试`);
         if (!trashed.length) throw new HttpError(404, "素材已不在素材库中，请刷新后重试");
         sendJson(response, 200, { status: "trashed", trashed, failed, missing, ...options.inbox.getSummary() });
         return;

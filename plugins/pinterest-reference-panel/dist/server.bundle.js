@@ -7253,7 +7253,7 @@ var require_dist = __commonJS({
 // src/server.ts
 import { readFileSync as readFileSync3 } from "node:fs";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
-import { dirname as dirname5, join as join5 } from "node:path";
+import { dirname as dirname5, join as join6 } from "node:path";
 
 // ../../node_modules/zod/v3/helpers/util.js
 var util;
@@ -36661,9 +36661,97 @@ import { execFile } from "node:child_process";
 import { createReadStream, existsSync, watch } from "node:fs";
 import { constants } from "node:fs";
 import { copyFile, link, lstat, mkdir, open as open2, readFile, readdir, realpath, rename, rm, stat } from "node:fs/promises";
-import { homedir } from "node:os";
-import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
+import { homedir as homedir2 } from "node:os";
+import { basename, dirname, extname, join as join2, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
+
+// src/platform.ts
+import { spawn } from "node:child_process";
+import { homedir, userInfo } from "node:os";
+import { join } from "node:path";
+var APP = "pinterest-reference-panel";
+var isMac = () => process.platform === "darwin";
+var isWindows = () => process.platform === "win32";
+function appDirectory(kind) {
+  const home = homedir();
+  if (isMac()) return kind === "cache" ? join(home, "Library", "Caches", APP) : join(home, "Library", "Application Support", APP);
+  if (isWindows()) {
+    return kind === "cache" ? join(process.env.LOCALAPPDATA || join(home, "AppData", "Local"), APP, "Cache") : join(process.env.APPDATA || join(home, "AppData", "Roaming"), APP);
+  }
+  return kind === "cache" ? join(process.env.XDG_CACHE_HOME || join(home, ".cache"), APP) : join(process.env.XDG_STATE_HOME || join(home, ".local", "state"), APP);
+}
+function userKey() {
+  const uid = process.getuid?.();
+  if (uid !== void 0) return String(uid);
+  try {
+    return userInfo().username.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 32) || "user";
+  } catch {
+    return "user";
+  }
+}
+function controlEndpoint(runtimeRoot, key) {
+  return isWindows() ? `\\\\.\\pipe\\pinterest-boardflow-${userKey()}-${key}` : join(runtimeRoot, "rpc.sock");
+}
+function runPowerShell(script, input2 = "", timeoutMs = 15e3, maxOutput = 65536) {
+  const prelude = "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';[Console]::InputEncoding=[Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);";
+  const encoded = Buffer.from(prelude + script, "utf16le").toString("base64");
+  return new Promise((resolveRun, rejectRun) => {
+    const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded], {
+      stdio: ["pipe", "pipe", "ignore"],
+      windowsHide: true
+    });
+    const chunks = [];
+    let size = 0;
+    let settled = false;
+    const finish = (error62) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error62) rejectRun(error62);
+      else resolveRun(Buffer.concat(chunks));
+    };
+    const timer = setTimeout(() => {
+      child.kill();
+      finish(new Error("PowerShell timeout"));
+    }, timeoutMs);
+    child.stdout.on("data", (chunk) => {
+      size += chunk.byteLength;
+      if (size > maxOutput) {
+        child.kill();
+        finish(new Error("PowerShell output too large"));
+      } else chunks.push(Buffer.from(chunk));
+    });
+    child.once("error", (error62) => finish(error62));
+    child.once("close", (code) => finish(code === 0 ? void 0 : new Error("PowerShell command failed")));
+    child.stdin.once("error", (error62) => finish(error62));
+    child.stdin.end(input2, "utf8");
+  });
+}
+async function writeWindowsClipboard(text, timeoutMs) {
+  const copied = await runPowerShell(
+    "$t=[Console]::In.ReadToEnd();Set-Clipboard -Value $t;$r=Get-Clipboard -Raw;if($null -ne $r){[Console]::Out.Write($r)}",
+    text,
+    timeoutMs,
+    16384 * 2
+  );
+  return copied.toString("utf8");
+}
+async function moveToWindowsRecycleBin(filePath) {
+  await runPowerShell(
+    "$p=[Console]::In.ReadToEnd();Add-Type -AssemblyName Microsoft.VisualBasic;[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($p,'OnlyErrorDialogs','SendToRecycleBin')",
+    filePath
+  );
+}
+async function renderWindowsThumbnail(sourcePath, outputPath, maxEdge = 480) {
+  await runPowerShell(
+    `$lines=[Console]::In.ReadToEnd() -split "\`n";$src=$lines[0];$out=$lines[1];Add-Type -AssemblyName System.Drawing;$img=[System.Drawing.Image]::FromFile($src);try{try{$o=$img.GetPropertyItem(274).Value[0]}catch{$o=1};$flip=@{2='RotateNoneFlipX';3='Rotate180FlipNone';4='Rotate180FlipX';5='Rotate90FlipX';6='Rotate90FlipNone';7='Rotate270FlipX';8='Rotate270FlipNone'};if($flip.ContainsKey([string]$o)){$img.RotateFlip([System.Drawing.RotateFlipType]$flip[[string]$o])};$s=[Math]::Min(1,${maxEdge}/[Math]::Max($img.Width,$img.Height));$w=[Math]::Max(1,[int][Math]::Round($img.Width*$s));$h=[Math]::Max(1,[int][Math]::Round($img.Height*$s));$bmp=New-Object System.Drawing.Bitmap $w,$h;$g=[System.Drawing.Graphics]::FromImage($bmp);$g.Clear([System.Drawing.Color]::White);$g.InterpolationMode='HighQualityBicubic';$g.DrawImage($img,0,0,$w,$h);$g.Dispose();$codec=[System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders()|Where-Object{$_.MimeType -eq 'image/jpeg'};$params=New-Object System.Drawing.Imaging.EncoderParameters 1;$params.Param[0]=New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality,[long]82);$bmp.Save($out,$codec,$params);$bmp.Dispose()}finally{$img.Dispose()}`,
+    `${sourcePath}
+${outputPath}`,
+    2e4
+  );
+}
+
+// src/inbox.ts
 var execFileAsync = promisify(execFile);
 var IMAGE_EXTENSIONS = /* @__PURE__ */ new Set([".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp"]);
 var RECONCILE_INTERVAL_MS = 1e4;
@@ -36712,7 +36800,7 @@ async function walkImages(root, directory = root) {
   const paths = [];
   for (const entry of entries) {
     if (entry.name.startsWith(".")) continue;
-    const absolutePath = join(directory, entry.name);
+    const absolutePath = join2(directory, entry.name);
     if (entry.isDirectory()) {
       paths.push(...await walkImages(root, absolutePath));
       continue;
@@ -36825,8 +36913,19 @@ async function isStableFile(filePath) {
   return settled.isFile() && initial.size === settled.size && initial.mtimeMs === settled.mtimeMs;
 }
 async function moveToMacTrash(filePath) {
-  if (process.platform !== "darwin" || !existsSync("/usr/bin/trash")) throw new Error("\u5F53\u524D\u7CFB\u7EDF\u6CA1\u6709\u53EF\u7528\u7684 macOS \u5E9F\u7EB8\u7BD3\u547D\u4EE4");
+  if (process.platform === "win32") {
+    await moveToWindowsRecycleBin(filePath);
+    return;
+  }
+  if (process.platform !== "darwin" || !existsSync("/usr/bin/trash")) throw new Error("\u5F53\u524D\u7CFB\u7EDF\u6CA1\u6709\u53EF\u7528\u7684\u5E9F\u7EB8\u7BD3\u6216\u56DE\u6536\u7AD9");
   await execFileAsync("/usr/bin/trash", [filePath], { timeout: 15e3 });
+}
+var moveToTrash = moveToMacTrash;
+var IMAGE_TYPES = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".avif": "image/avif", ".gif": "image/gif" };
+var MAX_ORIGINAL_THUMBNAIL_BYTES = 25 * 1024 * 1024;
+function looksLikeImage(bytes) {
+  const ascii = (start, end) => bytes.toString("latin1", start, end);
+  return bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 || ascii(0, 8) === "\x89PNG\r\n\n" || ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP" || ascii(0, 4) === "GIF8" || ascii(4, 8) === "ftyp";
 }
 async function mapWithConcurrency(values, concurrency, mapper) {
   const results = new Array(values.length);
@@ -36872,9 +36971,9 @@ var InboxService = class {
   refreshedAt = (/* @__PURE__ */ new Date(0)).toISOString();
   constructor(options = {}) {
     const configuredInbox = options.inboxRoot ?? process.env.PINTEREST_INBOX_DIR;
-    this.inboxRoot = resolve(configuredInbox ?? join(homedir(), "Pictures", "PinterestInbox"));
-    this.stagingRoot = resolve(options.stagingRoot ?? process.env.PINTEREST_INBOX_STAGING_DIR ?? (configuredInbox ? this.inboxRoot : join(homedir(), "Downloads", "PinterestInbox")));
-    this.cacheRoot = resolve(options.cacheRoot ?? join(homedir(), "Library", "Caches", "pinterest-reference-panel", "thumbnails"));
+    this.inboxRoot = resolve(configuredInbox ?? join2(homedir2(), "Pictures", "PinterestInbox"));
+    this.stagingRoot = resolve(options.stagingRoot ?? process.env.PINTEREST_INBOX_STAGING_DIR ?? (configuredInbox ? this.inboxRoot : join2(homedir2(), "Downloads", "PinterestInbox")));
+    this.cacheRoot = resolve(options.cacheRoot ?? join2(appDirectory("cache"), "thumbnails"));
     this.reconcileIntervalMs = options.reconcileIntervalMs ?? RECONCILE_INTERVAL_MS;
     this.trashFile = options.trashFile ?? moveToMacTrash;
   }
@@ -36973,7 +37072,7 @@ var InboxService = class {
         await mkdir(destinationDirectory, { recursive: true });
         const canonicalDestinationDirectory = await realpath(destinationDirectory);
         if (!isWithin(canonicalInbox, canonicalDestinationDirectory)) throw new Error("\u76EE\u6807\u56FE\u7247\u76EE\u5F55\u8D8A\u8FC7\u957F\u671F\u5E93\u8FB9\u754C");
-        let destinationPath = join(canonicalDestinationDirectory, basename(sourceRelativePath));
+        let destinationPath = join2(canonicalDestinationDirectory, basename(sourceRelativePath));
         let renamedForConflict = false;
         for (let suffixLength = 8; ; suffixLength += 4) {
           try {
@@ -36990,10 +37089,10 @@ var InboxService = class {
             break;
           }
           renamedForConflict = true;
-          destinationPath = join(canonicalDestinationDirectory, `${stem}--${sourceDigest.slice(0, Math.min(suffixLength, sourceDigest.length))}${extension}`);
+          destinationPath = join2(canonicalDestinationDirectory, `${stem}--${sourceDigest.slice(0, Math.min(suffixLength, sourceDigest.length))}${extension}`);
         }
         if (!destinationPath) continue;
-        const temporaryPath = join(canonicalDestinationDirectory, `.${basename(destinationPath)}.${process.pid}.${Date.now()}.tmp`);
+        const temporaryPath = join2(canonicalDestinationDirectory, `.${basename(destinationPath)}.${process.pid}.${Date.now()}.tmp`);
         try {
           await copyFile(sourcePath, temporaryPath, constants.COPYFILE_EXCL);
           if (await hashFile(temporaryPath) !== sourceDigest) throw new Error("\u642C\u8FD0\u540E\u6587\u4EF6\u6821\u9A8C\u5931\u8D25");
@@ -37087,7 +37186,7 @@ var InboxService = class {
     if (existsSync(asset.sourcePath)) throw new Error("\u539F\u56FE\u4ECD\u5728\u7D20\u6750\u5E93\u4E2D\uFF0C\u672A\u80FD\u79FB\u5230\u5E9F\u7EB8\u7BD3");
     if (this.assets.delete(asset.id)) this.version += 1;
     this.dimensions.delete(asset.signature);
-    await rm(join(this.cacheRoot, `${asset.id}-${asset.signature}.jpg`), { force: true });
+    await rm(join2(this.cacheRoot, `${asset.id}-${asset.signature}.jpg`), { force: true });
     return asset;
   }
   publicTransferSummary() {
@@ -37160,6 +37259,7 @@ var InboxService = class {
       try {
         const thumbnail = await this.getThumbnail(asset.id);
         if (!thumbnail) throw new Error("\u56FE\u7247\u5DF2\u79BB\u5F00 Pinterest BoardFlow \u7D20\u6750\u5E93\u6216\u4E0D\u518D\u53EF\u8BFB");
+        if (thumbnail.original && thumbnail.data.length > 15e5) throw new Error("\u7F29\u7565\u56FE\u6682\u4E0D\u53EF\u7528");
         return [asset.id, `data:${thumbnail.contentType};base64,${thumbnail.data.toString("base64")}`, null];
       } catch (error62) {
         return [asset.id, null, error62 instanceof Error ? error62.message : String(error62)];
@@ -37194,20 +37294,33 @@ var InboxService = class {
     const existing = this.thumbnailPromises.get(requestKey);
     if (existing) return existing;
     const pending = (async () => {
-      if (process.platform !== "darwin" || !existsSync("/usr/bin/sips")) throw new Error("macOS sips is unavailable");
-      const cachePath = join(this.cacheRoot, `${asset.id}-${asset.signature}.jpg`);
+      const mac3 = process.platform === "darwin" && existsSync("/usr/bin/sips");
+      const windows = process.platform === "win32";
+      const cachePath = join2(this.cacheRoot, `${asset.id}-${asset.signature}.jpg`);
       if (!existsSync(cachePath)) {
-        await this.withThumbnailSlot(async () => {
-          if (existsSync(cachePath)) return;
+        const generated = (mac3 || windows) && await this.withThumbnailSlot(async () => {
+          if (existsSync(cachePath)) return true;
+          await mkdir(this.cacheRoot, { recursive: true });
           const temporaryPath = `${cachePath}.${process.pid}.${Date.now()}.tmp.jpg`;
           try {
-            await execFileAsync("/usr/bin/sips", ["-Z", "480", "-s", "format", "jpeg", asset.sourcePath, "--out", temporaryPath], { timeout: 15e3 });
+            if (mac3) await execFileAsync("/usr/bin/sips", ["-Z", "480", "-s", "format", "jpeg", asset.sourcePath, "--out", temporaryPath], { timeout: 15e3 });
+            else await renderWindowsThumbnail(asset.sourcePath, temporaryPath, 480);
             await rename(temporaryPath, cachePath);
+            return true;
           } catch (error62) {
             await rm(temporaryPath, { force: true });
-            throw error62;
+            if (mac3) throw error62;
+            return false;
           }
         });
+        if (!generated) {
+          const info = await stat(asset.sourcePath);
+          if (info.size > MAX_ORIGINAL_THUMBNAIL_BYTES) throw new Error("\u6CA1\u6709\u53EF\u7528\u7684\u7F29\u7565\u56FE\u5DE5\u5177\uFF0C\u4E14\u539F\u56FE\u8FC7\u5927");
+          const bytes = await readFile(asset.sourcePath);
+          const contentType = IMAGE_TYPES[asset.extension];
+          if (!contentType || !looksLikeImage(bytes)) throw new Error("\u6CA1\u6709\u53EF\u7528\u7684\u7F29\u7565\u56FE\u5DE5\u5177\uFF0C\u4E14\u6587\u4EF6\u4E0D\u662F\u53EF\u663E\u793A\u7684\u56FE\u7247");
+          return { data: bytes, contentType, original: true };
+        }
       }
       return { data: await readFile(cachePath), contentType: "image/jpeg" };
     })().finally(() => this.thumbnailPromises.delete(requestKey));
@@ -37227,12 +37340,12 @@ var InboxService = class {
 
 // src/panel-daemon.ts
 import { createHash as createHash2 } from "node:crypto";
-import { spawn as spawn2 } from "node:child_process";
+import { spawn as spawn3 } from "node:child_process";
 import { chmodSync, closeSync, mkdirSync as mkdirSync2, openSync, readFileSync as readFileSync2, rmSync as rmSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { rm as rm2 } from "node:fs/promises";
 import { createServer as createServer2, request } from "node:http";
-import { homedir as homedir2, tmpdir } from "node:os";
-import { join as join3, resolve as resolve2 } from "node:path";
+import { tmpdir } from "node:os";
+import { join as join4, resolve as resolve2 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -37400,8 +37513,8 @@ import { randomBytes as randomBytes3 } from "node:crypto";
 import { constants as constants2, existsSync as existsSync2 } from "node:fs";
 import { open as open3, readFile as readFile2 } from "node:fs/promises";
 import { createServer } from "node:http";
-import { dirname as dirname3, join as join2 } from "node:path";
-import { spawn } from "node:child_process";
+import { dirname as dirname3, join as join3 } from "node:path";
+import { spawn as spawn2 } from "node:child_process";
 import { fileURLToPath } from "node:url";
 var LOOPBACK_HOST = "127.0.0.1";
 var MAX_JSON_BYTES = 2048;
@@ -37499,7 +37612,7 @@ function runClipboardCommand(command, input2, deadline) {
       rejectCommand(new Error("clipboard timeout"));
       return;
     }
-    const child = spawn(`/usr/bin/${command}`, command === "pbpaste" ? ["-Prefer", "txt"] : [], {
+    const child = spawn2(`/usr/bin/${command}`, command === "pbpaste" ? ["-Prefer", "txt"] : [], {
       stdio: ["pipe", "pipe", "ignore"],
       // GUI/MCP hosts may use C or no locale. pbcopy can exit 0 yet discard
       // non-ASCII input in that environment; stdin's UTF-8 flag alone is insufficient.
@@ -37537,8 +37650,9 @@ function runClipboardCommand(command, input2, deadline) {
   });
 }
 async function writeTextToMacClipboard(text) {
+  if (process.platform === "win32") return writeTextToWindowsClipboard(text);
   if (process.platform !== "darwin" || !existsSync2("/usr/bin/pbcopy") || !existsSync2("/usr/bin/pbpaste")) {
-    throw new HttpError(503, "\u5F53\u524D\u7CFB\u7EDF\u6CA1\u6709\u53EF\u7528\u7684 macOS \u526A\u8D34\u677F\u670D\u52A1");
+    throw new HttpError(503, "\u5F53\u524D\u7CFB\u7EDF\u6CA1\u6709\u53EF\u7528\u7684\u526A\u8D34\u677F\u670D\u52A1");
   }
   if (!text || text.includes("\0") || Buffer.byteLength(text, "utf8") > 16384) {
     throw new HttpError(400, "\u5F85\u590D\u5236\u8DEF\u5F84\u65E0\u6548\u6216\u8FC7\u957F");
@@ -37552,13 +37666,26 @@ async function writeTextToMacClipboard(text) {
     throw new HttpError(503, "\u672A\u80FD\u786E\u8BA4\u8DEF\u5F84\u5DF2\u5199\u5165\u526A\u8D34\u677F\uFF0C\u8BF7\u91CD\u65B0\u590D\u5236");
   }
 }
+async function writeTextToWindowsClipboard(text) {
+  if (!text || text.includes("\0") || Buffer.byteLength(text, "utf8") > 16384) {
+    throw new HttpError(400, "\u5F85\u590D\u5236\u8DEF\u5F84\u65E0\u6548\u6216\u8FC7\u957F");
+  }
+  try {
+    const copied = await writeWindowsClipboard(text, 8e3);
+    const normalise = (value) => value.replace(/\r\n/g, "\n").replace(/\n+$/, "");
+    if (normalise(copied) !== normalise(text)) throw new Error("clipboard verification failed");
+  } catch {
+    throw new HttpError(503, "\u672A\u80FD\u786E\u8BA4\u8DEF\u5F84\u5DF2\u5199\u5165\u526A\u8D34\u677F\uFF0C\u8BF7\u91CD\u65B0\u590D\u5236");
+  }
+}
+var writeTextToClipboard = writeTextToMacClipboard;
 async function startLocalPanelServer(options) {
   const moduleDirectory2 = dirname3(fileURLToPath(import.meta.url));
-  const assetRoot = options.assetRoot ?? join2(moduleDirectory2, "../assets");
+  const assetRoot = options.assetRoot ?? join3(moduleDirectory2, "../assets");
   const [htmlTemplate, css, javascript] = await Promise.all([
-    readFile2(join2(assetRoot, "local-panel.html"), "utf8"),
-    readFile2(join2(assetRoot, "local-panel.css"), "utf8"),
-    readFile2(join2(assetRoot, "local-panel.js"), "utf8")
+    readFile2(join3(assetRoot, "local-panel.html"), "utf8"),
+    readFile2(join3(assetRoot, "local-panel.css"), "utf8"),
+    readFile2(join3(assetRoot, "local-panel.js"), "utf8")
   ]);
   const clipboardWriter = options.clipboardWriter ?? writeTextToMacClipboard;
   const references = options.references ?? new ReferenceSessions(options.inbox);
@@ -37685,7 +37812,7 @@ async function startLocalPanelServer(options) {
         const body = await readJson(request2);
         if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).join() !== "revision" || !Number.isInteger(body.revision)) throw new HttpError(400, "\u590D\u5236\u8BF7\u6C42\u9700\u8981\u53C2\u8003\u7BEE\u7248\u672C\u53F7");
         const selected = await references.resolve(referenceSessionId(), body.revision);
-        await clipboardWriter(selected.files.map((file2) => file2.path).join("\n"));
+        await clipboardWriter(selected.files.map((file2) => file2.path).join(process.platform === "win32" ? "\r\n" : "\n"));
         sendJson(response, 200, { status: "copied", count: selected.files.length });
         return;
       }
@@ -37735,7 +37862,7 @@ async function startLocalPanelServer(options) {
             trashed.push({ assetId, title: asset.title });
           }
         }
-        if (!trashed.length && failed.length) throw new HttpError(503, "\u672A\u80FD\u79FB\u5230\u5E9F\u7EB8\u7BD3\uFF0C\u539F\u56FE\u4FDD\u6301\u4E0D\u53D8\uFF0C\u8BF7\u91CD\u8BD5");
+        if (!trashed.length && failed.length) throw new HttpError(503, `\u672A\u80FD\u79FB\u5230${process.platform === "win32" ? "\u56DE\u6536\u7AD9" : "\u5E9F\u7EB8\u7BD3"}\uFF0C\u539F\u56FE\u4FDD\u6301\u4E0D\u53D8\uFF0C\u8BF7\u91CD\u8BD5`);
         if (!trashed.length) throw new HttpError(404, "\u7D20\u6750\u5DF2\u4E0D\u5728\u7D20\u6750\u5E93\u4E2D\uFF0C\u8BF7\u5237\u65B0\u540E\u91CD\u8BD5");
         sendJson(response, 200, { status: "trashed", trashed, failed, missing, ...options.inbox.getSummary() });
         return;
@@ -37801,9 +37928,9 @@ function daemonPaths(inbox2 = new InboxService()) {
     inbox2.stagingRoot,
     process.env.PINTEREST_PANEL_STATE_DIR ?? "default"
   ])).digest("hex").slice(0, 20);
-  const stateRoot = join3(resolve2(process.env.PINTEREST_PANEL_STATE_DIR ?? join3(homedir2(), "Library", "Application Support", "pinterest-reference-panel")), key);
-  const runtimeRoot = join3(tmpdir(), `bf-${process.getuid?.() ?? "user"}-${key}`);
-  return { stateRoot, runtimeRoot, socket: join3(runtimeRoot, "rpc.sock"), lock: join3(runtimeRoot, "owner") };
+  const stateRoot = join4(resolve2(process.env.PINTEREST_PANEL_STATE_DIR ?? appDirectory("state")), key);
+  const runtimeRoot = join4(tmpdir(), `bf-${userKey()}-${key}`);
+  return { stateRoot, runtimeRoot, socket: controlEndpoint(runtimeRoot, key), lock: join4(runtimeRoot, "owner") };
 }
 function unavailable(error62) {
   return ["ENOENT", "ECONNREFUSED", "ECONNRESET", "EPIPE"].includes(error62.code ?? "");
@@ -37855,14 +37982,16 @@ var PanelDaemonClient = class {
         if (!unavailable(error62)) throw error62;
       }
       mkdirSync2(this.paths.stateRoot, { recursive: true, mode: 448 });
-      const log = openSync(join3(this.paths.stateRoot, "service.log"), "a", 384);
+      const log = openSync(join4(this.paths.stateRoot, "service.log"), "a", 384);
       let spawnError;
       let exitCode = null;
       try {
-        const child = spawn2(process.execPath, [fileURLToPath2(import.meta.url), "--panel-daemon"], {
+        const child = spawn3(process.execPath, [fileURLToPath2(import.meta.url), "--panel-daemon"], {
+          // windowsHide: without it a detached service opens a console window on Windows.
           detached: true,
           stdio: ["ignore", log, log],
-          env: process.env
+          env: process.env,
+          windowsHide: true
         });
         child.once("error", (error62) => {
           spawnError = error62;
@@ -37908,7 +38037,7 @@ var PanelDaemonClient = class {
 function claimService(paths) {
   mkdirSync2(paths.runtimeRoot, { recursive: true, mode: 448 });
   chmodSync(paths.runtimeRoot, 448);
-  const gate = join3(paths.runtimeRoot, "launching");
+  const gate = join4(paths.runtimeRoot, "launching");
   try {
     mkdirSync2(gate, { mode: 448 });
   } catch (error62) {
@@ -37917,7 +38046,7 @@ function claimService(paths) {
   }
   try {
     try {
-      const owner = Number(readFileSync2(join3(paths.lock, "pid"), "utf8"));
+      const owner = Number(readFileSync2(join4(paths.lock, "pid"), "utf8"));
       if (!Number.isInteger(owner) || owner <= 0) throw new Error("BoardFlow service owner is invalid");
       try {
         process.kill(owner, 0);
@@ -37930,7 +38059,7 @@ function claimService(paths) {
     }
     rmSync2(paths.lock, { recursive: true, force: true });
     mkdirSync2(paths.lock, { mode: 448 });
-    writeFileSync2(join3(paths.lock, "pid"), String(process.pid), { mode: 384 });
+    writeFileSync2(join4(paths.lock, "pid"), String(process.pid), { mode: 384 });
     return true;
   } finally {
     rmSync2(gate, { recursive: true, force: true });
@@ -37962,7 +38091,7 @@ async function runPanelDaemon() {
     await stopPanel();
     await inbox2.close();
     await closingControl;
-    await rm2(paths.socket, { force: true });
+    if (!isWindows()) await rm2(paths.socket, { force: true });
     await rm2(paths.lock, { recursive: true, force: true });
   })();
   const onSignal = (signal) => {
@@ -37988,8 +38117,8 @@ async function runPanelDaemon() {
     return localPanelStop;
   }
   try {
-    const references = new ReferenceSessions(inbox2, join3(paths.stateRoot, "references.json"));
-    const portPath = join3(paths.stateRoot, "web.json");
+    const references = new ReferenceSessions(inbox2, join4(paths.stateRoot, "references.json"));
+    const portPath = join4(paths.stateRoot, "web.json");
     const stored = readState(portPath);
     if (stored !== void 0 && (!stored || typeof stored !== "object" || !("port" in stored) || !Number.isInteger(stored.port) || Number(stored.port) < 1 || Number(stored.port) > 65535)) {
       throw new Error("BoardFlow saved port is invalid");
@@ -38046,7 +38175,7 @@ async function runPanelDaemon() {
     };
     await inbox2.start();
     if (saved?.port && saved.enabled !== false) await ensurePanel();
-    await rm2(paths.socket, { force: true });
+    if (!isWindows()) await rm2(paths.socket, { force: true });
     control = createServer2((req, res) => {
       void (async () => {
         if (req.method !== "POST" || req.url !== "/rpc") throw new Error("invalid RPC request");
@@ -38077,7 +38206,7 @@ async function runPanelDaemon() {
         resolveListen();
       });
     });
-    chmodSync(paths.socket, 384);
+    if (!isWindows()) chmodSync(paths.socket, 384);
     log(`service ready pid=${process.pid}`);
   } catch (error62) {
     await close();
@@ -38090,8 +38219,7 @@ import { createHash as createHash3, randomBytes as randomBytes4 } from "node:cry
 import { execFile as execFile2 } from "node:child_process";
 import { constants as constants3, existsSync as existsSync3 } from "node:fs";
 import { access, copyFile as copyFile2, lstat as lstat2, mkdir as mkdir2, readFile as readFile3, realpath as realpath2, rename as rename2, rm as rm3, stat as stat3 } from "node:fs/promises";
-import { homedir as homedir3 } from "node:os";
-import { basename as basename2, dirname as dirname4, extname as extname2, join as join4, relative as relative2, resolve as resolve3, sep as sep2 } from "node:path";
+import { basename as basename2, dirname as dirname4, extname as extname2, join as join5, relative as relative2, resolve as resolve3, sep as sep2 } from "node:path";
 import { promisify as promisify2 } from "node:util";
 var execFileAsync2 = promisify2(execFile2);
 var REFERENCE_MAX_EDGE = 2048;
@@ -38120,7 +38248,7 @@ var WorkspaceRegistry = class {
   imageProcessorPath;
   platform;
   constructor(options = {}) {
-    this.derivativeCacheRoot = resolve3(options.derivativeCacheRoot ?? join4(homedir3(), "Library", "Caches", "pinterest-reference-panel", "references"));
+    this.derivativeCacheRoot = resolve3(options.derivativeCacheRoot ?? join5(appDirectory("cache"), "references"));
     this.imageProcessorPath = options.imageProcessorPath ?? "/usr/bin/sips";
     this.platform = options.platform ?? process.platform;
   }
@@ -38141,7 +38269,7 @@ var WorkspaceRegistry = class {
     const workspaceRoot = this.roots.get(token);
     if (!workspaceRoot) throw new Error("\u5DE5\u4F5C\u533A\u4EE4\u724C\u65E0\u6548\u6216\u5DF2\u8FC7\u671F");
     const canonicalRoot = await realpath2(workspaceRoot);
-    const destinationDirectory = join4(canonicalRoot, "references", "pinterest", safeSegment(asset.boardId));
+    const destinationDirectory = join5(canonicalRoot, "references", "pinterest", safeSegment(asset.boardId));
     await mkdir2(destinationDirectory, { recursive: true });
     const canonicalDestinationDirectory = await realpath2(destinationDirectory);
     if (!isWithin2(canonicalRoot, canonicalDestinationDirectory)) throw new Error("\u5DE5\u4F5C\u533A\u5B50\u76EE\u5F55\u6307\u5411\u4E86\u6839\u76EE\u5F55\u4E4B\u5916");
@@ -38149,10 +38277,10 @@ var WorkspaceRegistry = class {
     const extension = prepared.extension;
     const stem = safeSegment(basename2(asset.sourcePath, extname2(asset.sourcePath)));
     const sourceDigest = await fileHash(prepared.path);
-    let destinationPath = join4(canonicalDestinationDirectory, `${stem}${extension}`);
+    let destinationPath = join5(canonicalDestinationDirectory, `${stem}${extension}`);
     try {
       if (await fileHash(destinationPath) === sourceDigest) return this.result(canonicalRoot, destinationPath, true, prepared);
-      destinationPath = join4(canonicalDestinationDirectory, `${stem}-${sourceDigest.slice(0, 8)}${extension}`);
+      destinationPath = join5(canonicalDestinationDirectory, `${stem}-${sourceDigest.slice(0, 8)}${extension}`);
       try {
         if (await fileHash(destinationPath) === sourceDigest) return this.result(canonicalRoot, destinationPath, true, prepared);
       } catch {
@@ -38191,7 +38319,7 @@ var WorkspaceRegistry = class {
       const digest = await fileHash(asset.sourcePath);
       await mkdir2(this.derivativeCacheRoot, { recursive: true });
       const canonicalCacheRoot = await realpath2(this.derivativeCacheRoot);
-      const cachePath = join4(canonicalCacheRoot, `${digest.slice(0, 32)}-${recipe}${targetExtension}`);
+      const cachePath = join5(canonicalCacheRoot, `${digest.slice(0, 32)}-${recipe}${targetExtension}`);
       if (existsSync3(cachePath)) {
         const cachedStat = await lstat2(cachePath);
         if (!cachedStat.isFile() || cachedStat.isSymbolicLink() || cachedStat.size < 1) throw new Error("\u5F15\u7528\u7F13\u5B58\u4E0D\u662F\u5B89\u5168\u7684\u666E\u901A\u6587\u4EF6");
@@ -38234,7 +38362,7 @@ var WorkspaceRegistry = class {
 // src/server.ts
 var PANEL_URI = "ui://pinterest-reference-panel/panel.html";
 var moduleDirectory = dirname5(fileURLToPath3(import.meta.url));
-var panelHtml = readFileSync3(join5(moduleDirectory, "../assets/pinterest-panel.html"), "utf8");
+var panelHtml = readFileSync3(join6(moduleDirectory, "../assets/pinterest-panel.html"), "utf8");
 var inbox = new InboxService();
 var workspaces = new WorkspaceRegistry();
 var daemon = new PanelDaemonClient();
@@ -38530,14 +38658,19 @@ export {
   ReferenceError2 as ReferenceError,
   ReferenceSessions,
   WorkspaceRegistry,
+  appDirectory,
+  controlEndpoint,
   daemon,
   daemonPaths,
   inbox,
+  moveToTrash,
   parseImageDimensions,
   parseInboxFilename,
   server,
   startLocalPanelServer,
   startServer,
+  userKey,
   workspaces,
+  writeTextToClipboard,
   writeTextToMacClipboard
 };

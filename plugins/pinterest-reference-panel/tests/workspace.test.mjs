@@ -45,7 +45,7 @@ test("imports an indexed asset without overwriting existing workspace content", 
   assert.equal(await readFile(join(workspace, first.relativePath), "utf8"), "image-a");
 });
 
-test("rejects a references directory symlink that escapes the workspace", async (context) => {
+test("rejects a references directory symlink that escapes the workspace", { skip: process.platform === "win32" && "creating symlinks needs elevated rights on Windows" }, async (context) => {
   const root = await mkdtemp(join(tmpdir(), "pinterest-symlink-test-"));
   context.after(() => rm(root, { recursive: true, force: true }));
   const workspace = join(root, "workspace");
@@ -60,7 +60,7 @@ test("rejects a references directory symlink that escapes the workspace", async 
   await assert.rejects(() => registry.importAsset(asset(source), state.token), /root directory|outside|outside of the root|\u6839目录之外/);
 });
 
-test("generates and reuses a 2048 JPEG 80 reference derivative", async (context) => {
+test("generates and reuses a 2048 JPEG 80 reference derivative", { skip: process.platform === "win32" && "uses a POSIX shell script as a fake sips" }, async (context) => {
   const root = await mkdtemp(join(tmpdir(), "pinterest-derivative-test-"));
   context.after(() => rm(root, { recursive: true, force: true }));
   const workspace = join(root, "workspace");
@@ -113,7 +113,7 @@ test("preserves a WebP reference without invoking the image processor", async (c
   assert.equal(await readFile(join(workspace, imported.relativePath), "utf8"), "alpha-webp-source");
 });
 
-test("keeps the source when a generated light derivative would be larger", async (context) => {
+test("keeps the source when a generated light derivative would be larger", { skip: process.platform === "win32" && "uses a POSIX shell script as a fake sips" }, async (context) => {
   const root = await mkdtemp(join(tmpdir(), "pinterest-larger-derivative-test-"));
   context.after(() => rm(root, { recursive: true, force: true }));
   const workspace = join(root, "workspace");

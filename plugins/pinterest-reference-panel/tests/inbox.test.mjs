@@ -213,7 +213,7 @@ test("staging watcher with periodic reconciliation imports a newly completed dow
   assert.equal(await readFile(join(inboxRoot, "live", "fresh__pin-101.png"), "utf8"), "fresh-image");
 });
 
-test("an unsafe destination symlink leaves the staged source untouched", async (context) => {
+test("an unsafe destination symlink leaves the staged source untouched", { skip: process.platform === "win32" && "creating symlinks needs elevated rights on Windows" }, async (context) => {
   const root = await mkdtemp(join(tmpdir(), "pinterest-transfer-boundary-test-"));
   const stagingRoot = join(root, "Downloads", "PinterestInbox");
   const inboxRoot = join(root, "Pictures", "PinterestInbox");
@@ -238,7 +238,7 @@ test("an unsafe destination symlink leaves the staged source untouched", async (
   assert.equal(page.transfer.lastError.includes(root), false);
 });
 
-test("a destination file symlink cannot impersonate an identical library asset", async (context) => {
+test("a destination file symlink cannot impersonate an identical library asset", { skip: process.platform === "win32" && "creating symlinks needs elevated rights on Windows" }, async (context) => {
   const root = await mkdtemp(join(tmpdir(), "pinterest-transfer-file-symlink-test-"));
   const stagingRoot = join(root, "Downloads", "PinterestInbox");
   const inboxRoot = join(root, "Pictures", "PinterestInbox");
@@ -266,7 +266,7 @@ test("a destination file symlink cannot impersonate an identical library asset",
   assert.equal(await readFile(outside, "utf8"), "same-content");
 });
 
-test("rejects an indexed file replaced by a symlink outside the Inbox", async (context) => {
+test("rejects an indexed file replaced by a symlink outside the Inbox", { skip: process.platform === "win32" && "creating symlinks needs elevated rights on Windows" }, async (context) => {
   const root = await mkdtemp(join(tmpdir(), "pinterest-source-boundary-test-"));
   const inboxRoot = join(root, "PinterestInbox");
   const source = join(inboxRoot, "42__inside.jpg");

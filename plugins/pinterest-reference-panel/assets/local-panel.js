@@ -55,7 +55,19 @@ function springCurve(response, dampingRatio) {
 }
 const SPRING = springCurve(0.44, 0.86);
 // Copying is keyboard-only: ⌘C on macOS, Ctrl+C elsewhere.
-const COPY_KEY = /Mac|iPhone|iPad/i.test(globalThis.navigator?.platform || globalThis.navigator?.userAgent || "") ? "⌘C" : "Ctrl+C";
+const IS_MAC = /Mac|iPhone|iPad/i.test(globalThis.navigator?.platform || globalThis.navigator?.userAgent || "");
+const COPY_KEY = IS_MAC ? "⌘C" : "Ctrl+C";
+const PASTE_KEY = IS_MAC ? "⌘V" : "Ctrl+V";
+const TRASH = IS_MAC ? { name: "废纸篓", restore: "可在访达中放回" } : { name: "回收站", restore: "可在回收站中还原" };
+// The page ships macOS wording; on Windows/Linux swap shortcut keys and Trash/Finder names.
+function localizeForPlatform() {
+  if (IS_MAC || typeof document.querySelectorAll !== "function") return;
+  for (const key of document.querySelectorAll("kbd")) if (key.textContent?.startsWith("⌘")) key.textContent = `Ctrl+${key.textContent.slice(1)}`;
+  const swap = text => text.replace(/废纸篓/g, "回收站").replace(/可在访达中放回/g, "可在回收站中还原").replace(/访达/g, "文件资源管理器");
+  for (const node of document.querySelectorAll("[title]")) node.title = swap(node.title);
+  const walker = document.createTreeWalker?.(document.body, 4);
+  for (let text = walker?.nextNode(); text; text = walker.nextNode()) if (/废纸篓|访达/.test(text.nodeValue)) text.nodeValue = swap(text.nodeValue);
+}
 function shortcutLabel(node, text) {
   if (!node || (node.dataset && node.dataset.label === text)) return;
   if (node.dataset) node.dataset.label = text;
@@ -517,7 +529,7 @@ async function copyAsset(asset) {
       playMotion(card.querySelector(".thumb-frame"), [{ transform: "scale(1)" }, { transform: "scale(.97)", offset: .35 }, { transform: "scale(1)" }], { duration: 320 });
     }
     if (state.previewAsset?.id === asset.id) pulseControl(elements.previewCopy);
-    showToast("绝对路径已复制 · 回到对话按 ⌘V");
+    showToast(`绝对路径已复制 · 回到对话按 ${PASTE_KEY}`);
   } catch (error) { showToast(error.message || "复制失败，请重试", true); }
   finally { state.pendingCopies.delete(asset.id); updateCopyState(asset.id); }
 }
@@ -786,7 +798,7 @@ async function copySelection() {
     const result = await api("/api/references/clipboard", { method: "POST", body: { revision: state.selection.revision } });
     if (result.status !== "copied" || result.count !== expectedCount) throw new Error("未收到完整复制确认，请重试");
     pulseControl(elements.copySelection);
-    showToast(`已复制 ${result.count} 张图片的路径 · 回到对话按 ⌘V`);
+    showToast(`已复制 ${result.count} 张图片的路径 · 回到对话按 ${PASTE_KEY}`);
   } catch (error) { showToast(error.message || "复制失败", true); await loadSelection(); }
   finally { state.copyingSelection = false; updateSelectionStatus(); }
 }
@@ -834,7 +846,7 @@ async function trashPreviewAsset() {
     state.trashingId = null;
     forgetTrashed(new Set([asset.id]), result.total);
     const next = neighbors.map(id => state.assets.find(item => item.id === id)).find(Boolean);
-    showToast(`已移到废纸篓：${result.trashed[0].title}`);
+    showToast(`已移到${TRASH.name}：${result.trashed[0].title}`);
     if (state.previewAsset?.id === asset.id) {
       if (next) void openPreview(next, 1); else void dismissPreview();
     }
@@ -990,8 +1002,8 @@ async function trashPicks() {
     const removed = new Set([...result.trashed.map(item => item.assetId)]);
     state.bulkTrashing = false;
     forgetTrashed(removed, result.total);
-    if (result.failed?.length) showToast(`已移到废纸篓 ${removed.size} 张，${result.failed.length} 张未能删除，请重试`, true);
-    else showToast(`已移到废纸篓 ${removed.size} 张 · 可在访达中放回`);
+    if (result.failed?.length) showToast(`已移到${TRASH.name} ${removed.size} 张，${result.failed.length} 张未能删除，请重试`, true);
+    else showToast(`已移到${TRASH.name} ${removed.size} 张 · ${TRASH.restore}`);
   } catch (error) { showToast(error.message || "删除失败，请重试", true); }
   finally {
     state.bulkTrashing = false;
@@ -1346,6 +1358,7 @@ window.addEventListener("beforeunload", () => {
   for (const url of state.thumbnailUrls.values()) URL.revokeObjectURL(url);
   if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
 });
+localizeForPlatform();
 shortcutLabel(elements.copySelection, "复制路径");
 shortcutLabel(elements.previewCopy, "复制路径");
 if (!token) {

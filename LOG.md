@@ -352,3 +352,11 @@
 
 - 在允许监听本机端口与 Unix socket 的 macOS 环境运行 `npm test`：插件 73/73、下载器 40/40 通过，无跳过；包括此前未能运行的双 MCP 并发共享、SIGKILL 后恢复原 URL 与参考篮的集成用例。
 - 真实看板的宿主断连验收仍未做。
+
+## 2026-11-19 — Windows 适配
+
+- 目标：在 0.5.1 后台服务的基础上，让插件与下载器可以在 Windows 10 / 11 上使用。
+- 改动：新增 `src/platform.ts`，统一各平台目录与 PowerShell 调用。复制路径改用 `Set-Clipboard` 写入并 `Get-Clipboard` 读回校验；删除改为移到回收站；缩略图用系统 GDI+ 生成 480px JPEG，WebP/AVIF 等不能解码的格式在核验文件头后直接返回原图；缓存与状态目录改用 `%LOCALAPPDATA%` / `%APPDATA%`；后台服务改用按用户区分的命名管道，并以隐藏窗口启动。看板在非 Mac 系统显示 Ctrl 快捷键与“回收站”文案。多张路径在 Windows 上以 CRLF 连接。
+- 测试：新增 `scripts/node-test.mjs`（Windows 的 cmd 不展开通配符，Node 20 也不展开）；新增 `tests/windows.test.mjs`，在 Windows 上实测剪贴板中文多行往返、回收站、GDI+ 缩略图与 WebP 回退；需要符号链接权限或 POSIX 脚本的 7 个用例在 Windows 跳过，权限位断言仅在非 Windows 检查。CI 改为 Ubuntu / macOS / Windows 三平台矩阵。
+- 本机验证（macOS）：插件 74 通过、3 项 Windows 专属跳过，下载器 40/40。
+- 未测：Windows 实机运行尚未验证，以 CI 的 Windows 任务结果为准；Windows 上 Chrome 扩展与 Codex / Claude Code 宿主的端到端联调尚未做。

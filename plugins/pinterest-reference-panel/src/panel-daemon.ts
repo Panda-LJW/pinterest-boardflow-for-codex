@@ -11,6 +11,7 @@ import { InboxService } from "./inbox.js";
 import { ReferenceError, ReferenceSessions } from "./references.js";
 import { startLocalPanelServer, type LocalPanelServerHandle } from "./local-panel-server.js";
 import { readState, writeState } from "./persistent-state.js";
+import { appDirectory, controlEndpoint, isWindows, userKey } from "./platform.js";
 
 type Summary = ReturnType<InboxService["getSummary"]>;
 type Address = Pick<LocalPanelServerHandle, "host" | "port" | "url">;
@@ -30,10 +31,11 @@ export function daemonPaths(inbox = new InboxService()) {
   const key = createHash("sha256").update(JSON.stringify([
     inbox.inboxRoot, inbox.stagingRoot, process.env.PINTEREST_PANEL_STATE_DIR ?? "default"
   ])).digest("hex").slice(0, 20);
-  const stateRoot = join(resolve(process.env.PINTEREST_PANEL_STATE_DIR ?? join(homedir(), "Library", "Application Support", "pinterest-reference-panel")), key);
+  const stateRoot = join(resolve(process.env.PINTEREST_PANEL_STATE_DIR ?? appDirectory("state")), key);
   // macOS Unix socket paths are limited to 104 bytes; never use the long plugin cache path.
-  const runtimeRoot = join(tmpdir(), `bf-${process.getuid?.() ?? "user"}-${key}`);
-  return { stateRoot, runtimeRoot, socket: join(runtimeRoot, "rpc.sock"), lock: join(runtimeRoot, "owner") };
+  // Windows listens on a per-user named pipe instead of a socket file.
+  const runtimeRoot = join(tmpdir(), `bf-${userKey()}-${key}`);
+  return { stateRoot, runtimeRoot, socket: controlEndpoint(runtimeRoot, key), lock: join(runtimeRoot, "owner") };
 }
 
 function unavailable(error: unknown) {
@@ -92,7 +94,8 @@ export class PanelDaemonClient {
       let exitCode: number | null = null;
       try {
         const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "--panel-daemon"], {
-          detached: true, stdio: ["ignore", log, log], env: process.env
+          // windowsHide: without it a detached service opens a console window on Windows.
+          detached: true, stdio: ["ignore", log, log], env: process.env, windowsHide: true
         });
         child.once("error", error => { spawnError = error; });
         child.once("exit", code => { exitCode = code; });
@@ -178,7 +181,7 @@ export async function runPanelDaemon() {
     await stopPanel();
     await inbox.close();
     await closingControl;
-    await rm(paths.socket, { force: true });
+    if (!isWindows()) await rm(paths.socket, { force: true });
     await rm(paths.lock, { recursive: true, force: true });
   })();
   const onSignal = (signal: string) => { log(`received ${signal}`); void close().then(() => process.exit(0), error => { log(String(error)); process.exit(1); }); };
@@ -244,7 +247,7 @@ export async function runPanelDaemon() {
     await inbox.start();
     // Resume an existing web address on daemon recovery, before accepting MCP calls.
     if (saved?.port && saved.enabled !== false) await ensurePanel();
-    await rm(paths.socket, { force: true });
+    if (!isWindows()) await rm(paths.socket, { force: true });
     control = createServer((req, res) => {
       void (async () => {
         if (req.method !== "POST" || req.url !== "/rpc") throw new Error("invalid RPC request");
@@ -271,7 +274,7 @@ export async function runPanelDaemon() {
       control!.once("error", rejectListen);
       control!.listen(paths.socket, () => { control!.off("error", rejectListen); resolveListen(); });
     });
-    chmodSync(paths.socket, 0o600);
+    if (!isWindows()) chmodSync(paths.socket, 0o600);
     log(`service ready pid=${process.pid}`);
   } catch (error) {
     await close();

@@ -98,7 +98,7 @@ test("local panel is loopback-only, session protected, and copies only a resolve
     assert.equal(JSON.stringify(list).includes(inboxRoot), false);
     const assetId = list.page.assets[0].id;
 
-    if (process.platform === "darwin") {
+    if (process.platform === "darwin" || process.platform === "win32") {
       const thumbnailResponse = await api(panel.url, session, `/api/thumbnails/${assetId}`);
       assert.equal(thumbnailResponse.status, 200);
       assert.equal(thumbnailResponse.headers.get("content-type"), "image/jpeg");

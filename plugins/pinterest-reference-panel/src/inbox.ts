@@ -6,6 +6,7 @@ import { copyFile, link, lstat, mkdir, open, readFile, readdir, realpath, rename
 import { homedir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
+import { appDirectory, moveToWindowsRecycleBin, renderWindowsThumbnail } from "./platform.js";
 
 const execFileAsync = promisify(execFile);
 const IMAGE_EXTENSIONS = new Set([".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp"]);
@@ -254,10 +255,26 @@ async function isStableFile(filePath: string) {
   return settled.isFile() && initial.size === settled.size && initial.mtimeMs === settled.mtimeMs;
 }
 
-// Finder's Trash keeps "Put Back", so a deleted reference can still be recovered.
+// Finder's Trash keeps "Put Back" and the Windows Recycle Bin keeps "Restore",
+// so a deleted reference can still be recovered.
 export async function moveToMacTrash(filePath: string) {
-  if (process.platform !== "darwin" || !existsSync("/usr/bin/trash")) throw new Error("当前系统没有可用的 macOS 废纸篓命令");
+  if (process.platform === "win32") { await moveToWindowsRecycleBin(filePath); return; }
+  if (process.platform !== "darwin" || !existsSync("/usr/bin/trash")) throw new Error("当前系统没有可用的废纸篓或回收站");
   await execFileAsync("/usr/bin/trash", [filePath], { timeout: 15_000 });
+}
+export const moveToTrash = moveToMacTrash;
+
+const IMAGE_TYPES: Record<string, string> = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".avif": "image/avif", ".gif": "image/gif" };
+const MAX_ORIGINAL_THUMBNAIL_BYTES = 25 * 1024 * 1024;
+
+// Only hand real image bytes to the page when no resized thumbnail could be made.
+function looksLikeImage(bytes: Buffer) {
+  const ascii = (start: number, end: number) => bytes.toString("latin1", start, end);
+  return (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff)
+    || ascii(0, 8) === "\x89PNG\r\n\x1a\n"
+    || (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP")
+    || ascii(0, 4) === "GIF8"
+    || ascii(4, 8) === "ftyp";
 }
 
 async function mapWithConcurrency<T, R>(values: T[], concurrency: number, mapper: (value: T) => Promise<R>): Promise<R[]> {
@@ -288,7 +305,7 @@ export class InboxService {
   private debounceTimer: NodeJS.Timeout | null = null;
   private scanPromise: Promise<void> | null = null;
   private reconcilePromise: Promise<void> | null = null;
-  private thumbnailPromises = new Map<string, Promise<{ data: Buffer; contentType: "image/jpeg" } | null>>();
+  private thumbnailPromises = new Map<string, Promise<{ data: Buffer; contentType: string; original?: boolean } | null>>();
   private thumbnailActive = 0;
   private thumbnailWaiters: Array<() => void> = [];
   private reconcileQueued = false;
@@ -308,7 +325,7 @@ export class InboxService {
     const configuredInbox = options.inboxRoot ?? process.env.PINTEREST_INBOX_DIR;
     this.inboxRoot = resolve(configuredInbox ?? join(homedir(), "Pictures", "PinterestInbox"));
     this.stagingRoot = resolve(options.stagingRoot ?? process.env.PINTEREST_INBOX_STAGING_DIR ?? (configuredInbox ? this.inboxRoot : join(homedir(), "Downloads", "PinterestInbox")));
-    this.cacheRoot = resolve(options.cacheRoot ?? join(homedir(), "Library", "Caches", "pinterest-reference-panel", "thumbnails"));
+    this.cacheRoot = resolve(options.cacheRoot ?? join(appDirectory("cache"), "thumbnails"));
     this.reconcileIntervalMs = options.reconcileIntervalMs ?? RECONCILE_INTERVAL_MS;
     this.trashFile = options.trashFile ?? moveToMacTrash;
   }
@@ -607,6 +624,7 @@ export class InboxService {
       try {
         const thumbnail = await this.getThumbnail(asset.id);
         if (!thumbnail) throw new Error("图片已离开 Pinterest BoardFlow 素材库或不再可读");
+        if (thumbnail.original && thumbnail.data.length > 1_500_000) throw new Error("缩略图暂不可用");
         return [asset.id, `data:${thumbnail.contentType};base64,${thumbnail.data.toString("base64")}`, null] as const;
       } catch (error) {
         return [asset.id, null, error instanceof Error ? error.message : String(error)] as const;
@@ -636,29 +654,42 @@ export class InboxService {
     }
   }
 
-  async getThumbnail(assetId: string): Promise<{ data: Buffer; contentType: "image/jpeg" } | null> {
+  async getThumbnail(assetId: string): Promise<{ data: Buffer; contentType: string; original?: boolean } | null> {
     const asset = await this.resolveAsset(assetId);
     if (!asset) return null;
     const requestKey = `${asset.id}:${asset.signature}`;
     const existing = this.thumbnailPromises.get(requestKey);
     if (existing) return existing;
     const pending = (async () => {
-      if (process.platform !== "darwin" || !existsSync("/usr/bin/sips")) throw new Error("macOS sips is unavailable");
+      const mac = process.platform === "darwin" && existsSync("/usr/bin/sips");
+      const windows = process.platform === "win32";
       const cachePath = join(this.cacheRoot, `${asset.id}-${asset.signature}.jpg`);
       if (!existsSync(cachePath)) {
-        await this.withThumbnailSlot(async () => {
-          if (existsSync(cachePath)) return;
+        const generated = (mac || windows) && await this.withThumbnailSlot(async () => {
+          if (existsSync(cachePath)) return true;
+          await mkdir(this.cacheRoot, { recursive: true });
           const temporaryPath = `${cachePath}.${process.pid}.${Date.now()}.tmp.jpg`;
           try {
-            await execFileAsync("/usr/bin/sips", ["-Z", "480", "-s", "format", "jpeg", asset.sourcePath, "--out", temporaryPath], { timeout: 15_000 });
+            if (mac) await execFileAsync("/usr/bin/sips", ["-Z", "480", "-s", "format", "jpeg", asset.sourcePath, "--out", temporaryPath], { timeout: 15_000 });
+            else await renderWindowsThumbnail(asset.sourcePath, temporaryPath, 480);
             await rename(temporaryPath, cachePath);
+            return true;
           } catch (error) {
             await rm(temporaryPath, { force: true });
-            throw error;
+            if (mac) throw error;
+            return false; // e.g. GDI+ cannot decode WebP/AVIF: fall back to the original below
           }
         });
+        if (!generated) {
+          const info = await stat(asset.sourcePath);
+          if (info.size > MAX_ORIGINAL_THUMBNAIL_BYTES) throw new Error("没有可用的缩略图工具，且原图过大");
+          const bytes = await readFile(asset.sourcePath);
+          const contentType = IMAGE_TYPES[asset.extension];
+          if (!contentType || !looksLikeImage(bytes)) throw new Error("没有可用的缩略图工具，且文件不是可显示的图片");
+          return { data: bytes, contentType, original: true };
+        }
       }
-      return { data: await readFile(cachePath), contentType: "image/jpeg" as const };
+      return { data: await readFile(cachePath), contentType: "image/jpeg" };
     })().finally(() => this.thumbnailPromises.delete(requestKey));
     this.thumbnailPromises.set(requestKey, pending);
     return pending;
