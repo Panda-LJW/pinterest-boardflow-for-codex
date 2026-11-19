@@ -15,7 +15,7 @@ const state = {
   copiedAssetId: null, pendingCopies: new Set(),
   thumbnailUrls: new Map(), thumbnailFailures: new Set(), thumbnailRequests: new Map(),
   thumbnailEpoch: 0, thumbnailActive: 0, thumbnailWaiters: [],
-  selection: null, selectionError: null, selectionPending: 0, selectionChain: Promise.resolve(), copyingSelection: false,
+  selection: null, selectionError: null, selectionPending: 0, selectionSlow: false, selectionSlowTimer: null, selectionChain: Promise.resolve(), copyingSelection: false,
   previewAsset: null, previewUrl: null, previewGeneration: 0, previewController: null,
   previewClosing: false, previewCloseToken: 0,
   trashArmedId: null, trashArmTimer: null, trashingId: null,
@@ -57,7 +57,8 @@ const SPRING = springCurve(0.44, 0.86);
 // Copying is keyboard-only: ⌘C on macOS, Ctrl+C elsewhere.
 const COPY_KEY = /Mac|iPhone|iPad/i.test(globalThis.navigator?.platform || globalThis.navigator?.userAgent || "") ? "⌘C" : "Ctrl+C";
 function shortcutLabel(node, text) {
-  if (!node) return;
+  if (!node || (node.dataset && node.dataset.label === text)) return;
+  if (node.dataset) node.dataset.label = text;
   const key = document.createElement("kbd");
   key.textContent = COPY_KEY;
   node.replaceChildren(key, ` ${text}`);
@@ -294,6 +295,9 @@ function updateCopyState(assetId) {
     else shortcutLabel(elements.previewCopy, state.copiedAssetId === assetId ? "已复制 ✓" : "复制路径");
   }
 }
+// Writing an attribute, even with the same value, invalidates style for that card.
+function setAttr(node, name, value) { if (node && node.getAttribute(name) !== value) node.setAttribute(name, value); }
+function setText(node, value) { if (node && node.textContent !== value) node.textContent = value; }
 function canSelectReferences() { return Boolean(state.selection) && !state.selectionError; }
 function applySelectionState(card) {
   const id = card.dataset.assetId;
@@ -301,11 +305,12 @@ function applySelectionState(card) {
   const trigger = card.querySelector(".preview-trigger");
   const badge = card.querySelector(".pin-order");
   const changed = card.classList.contains("is-selected") !== (index >= 0);
-  card.classList.toggle("is-selected", index >= 0);
-  badge.textContent = index >= 0 ? String(index + 1) : "";
+  if (changed) card.classList.toggle("is-selected", index >= 0);
+  setText(badge, index >= 0 ? String(index + 1) : "");
   const label = canSelectReferences() ? `${index >= 0 ? `移除参考 ${index + 1}` : "加入参考"}：${card.dataset.title}` : `预览：${card.dataset.title}`;
-  trigger.setAttribute("aria-label", label); trigger.title = canSelectReferences() ? (index >= 0 ? `参考图 ${index + 1} · 点击移除` : "点击加入参考篮") : "点击预览";
-  trigger.setAttribute("aria-pressed", String(index >= 0));
+  setAttr(trigger, "aria-label", label);
+  setAttr(trigger, "title", canSelectReferences() ? (index >= 0 ? `参考图 ${index + 1} · 点击移除` : "点击加入参考篮") : "点击预览");
+  setAttr(trigger, "aria-pressed", String(index >= 0));
   if (changed && index >= 0) playMotion(badge, [{ transform: "scale(.4)", opacity: 0 }, { transform: "scale(1.12)", opacity: 1, offset: .6 }, { transform: "scale(1)", opacity: 1 }], { duration: 300 });
 }
 // Clicking a pin picks it; the corner button (or the preview fallback when no
@@ -557,14 +562,16 @@ function updateSelectionStatus() {
   const entries = state.selection?.entries ?? [];
   const unavailable = entries.some(entry => entry.status !== "ready");
   elements.selectionCount.textContent = `${entries.length} / 10`;
-  elements.selectionStatus.textContent = state.selectionError ? "未同步" : state.selectionPending ? "保存中…" : unavailable ? "需要检查" : entries.length ? "已就绪" : "";
+  const status = state.selectionError ? "未同步" : state.selectionPending && state.selectionSlow ? "保存中…" : unavailable ? "需要检查" : entries.length ? "已就绪" : "";
+  if (elements.selectionStatus.textContent !== status) elements.selectionStatus.textContent = status;
   elements.selectionStatus.classList.toggle("is-error", Boolean(state.selectionError) || unavailable);
-  elements.clearSelection.disabled = !entries.length || Boolean(state.selectionPending) || !state.selection;
-  const blocked = !entries.length || unavailable || Boolean(state.selectionPending) || Boolean(state.selectionError) || state.copyingSelection;
-  elements.copySelection.dataset.blocked = String(blocked);
-  elements.copySelection.setAttribute("aria-disabled", String(blocked));
-  if (state.copyingSelection) elements.copySelection.textContent = "复制中…";
-  else shortcutLabel(elements.copySelection, "复制路径");
+  // A pending save still blocks copying, but must not dim the controls: every pick
+  // saves for a few milliseconds, which made them flash.
+  elements.clearSelection.disabled = !entries.length || !state.selection;
+  const unusable = !entries.length || unavailable || Boolean(state.selectionError);
+  elements.copySelection.dataset.blocked = String(unusable || Boolean(state.selectionPending) || state.copyingSelection);
+  setAttr(elements.copySelection, "aria-disabled", String(unusable));
+  shortcutLabel(elements.copySelection, state.copyingSelection ? "复制中…" : "复制路径");
   document.body.classList.toggle("has-references", entries.length > 0);
   elements.selectionHint.textContent = !referenceSessionId ? "此页可浏览素材；请让 AI 助手为当前任务打开参考篮。"
     : state.selectionError || (unavailable ? "有参考图已变化或不可用，请移除后重新选择。"
@@ -588,21 +595,34 @@ function renderSelection() {
   const scrollLeft = elements.selectionList.scrollLeft;
   const entries = state.selection?.entries ?? [];
   elements.selectionList.hidden = !entries.length;
-  // Polls with an unchanged selection never rebuild this tray.
-  elements.selectionList.replaceChildren();
-  entries.forEach((entry, index) => {
-    const item = element("li", "selection-item");
-    item.dataset.assetId = entry.id;
-    item.classList.toggle("is-unavailable", entry.status !== "ready");
-    const thumb = button("selection-thumb", null, `预览参考 ${index + 1}：${entry.title}`, () => void openPreview(entry));
-    thumb.append(thumbnailImage(entry.id), element("span", "selection-number", String(index + 1)));
-    const remove = button("selection-remove", "×", `移除参考 ${index + 1}`, () => mutateSelection(ids => ids.filter(id => id !== entry.id)));
-    for (const [action, node] of [["preview", thumb], ["remove", remove]]) node.dataset.selectionAction = action;
-    thumb.title = `参考 ${index + 1}：拖动调整顺序，点击放大（⌥← / ⌥→ 也可移动）`;
-    if (entry.status !== "ready") thumb.append(element("span", "selection-invalid", "失效"));
+  // Keep existing tiles (their thumbnails are already decoded); only new picks get new nodes.
+  const existingTiles = new Map([...elements.selectionList.children].map(node => [node.dataset.assetId, node]));
+  const tiles = entries.map((entry, index) => {
+    const ready = entry.status === "ready";
+    let item = existingTiles.get(entry.id);
+    if (!item || item.dataset.status !== entry.status) {
+      item = element("li", "selection-item");
+      item.dataset.assetId = entry.id;
+      item.dataset.status = entry.status;
+      item.classList.toggle("is-unavailable", !ready);
+      const thumb = button("selection-thumb", null, "", () => void openPreview(entry));
+      thumb.append(thumbnailImage(entry.id), element("span", "selection-number"));
+      if (!ready) thumb.append(element("span", "selection-invalid", "失效"));
+      const remove = button("selection-remove", "×", "", () => mutateSelection(ids => ids.filter(id => id !== entry.id)));
+      for (const [action, node] of [["preview", thumb], ["remove", remove]]) node.dataset.selectionAction = action;
+      item.append(thumb, remove);
+    }
+    const thumb = item.querySelector(".selection-thumb"), remove = item.querySelector(".selection-remove");
+    setText(item.querySelector(".selection-number"), String(index + 1));
+    setAttr(thumb, "aria-label", `预览参考 ${index + 1}：${entry.title}`);
+    setAttr(thumb, "title", `参考 ${index + 1}：拖动调整顺序，点击放大（⌥← / ⌥→ 也可移动）`);
+    setAttr(remove, "aria-label", `移除参考 ${index + 1}`);
+    setAttr(remove, "title", `移除参考 ${index + 1}`);
     item.draggable = entries.length > 1;
-    item.append(thumb, remove); elements.selectionList.append(item);
+    return item;
   });
+  for (const [id, node] of existingTiles) if (!tiles.includes(node)) node.remove();
+  tiles.forEach((item, index) => { if (elements.selectionList.children[index] !== item) elements.selectionList.insertBefore(item, elements.selectionList.children[index] ?? null); });
   elements.selectionList.scrollLeft = scrollLeft;
   updateDockOverflow();
   if (focusedId) {
@@ -623,11 +643,11 @@ function renderSelection() {
     ], spring);
   }
   if (wasEmpty !== elements.referenceTray.classList.contains("is-empty")) {
-    for (const part of elements.referenceTray.querySelectorAll(".tray-info, .tray-actions")) playMotion(part, [{ opacity: 0, filter: "blur(4px)" }, { opacity: 1, filter: "none" }], { duration: 280, delay: 60 });
+    for (const part of elements.referenceTray.querySelectorAll(".tray-info, .tray-actions")) playMotion(part, [{ opacity: 0 }, { opacity: 1 }], { duration: 240, delay: 60, fill: "backwards" });
   }
   for (const [index, { node, before, after }] of items.entries()) {
     if (!before) {
-      playMotion(node, [{ opacity: 0, transform: "scale(.6)", filter: "blur(4px)" }, { opacity: 1, transform: "scale(1)", filter: "none" }], { ...spring, delay: 40 + Math.min(index, 4) * 20 });
+      playMotion(node, [{ opacity: 0, transform: "scale(.6)" }, { opacity: 1, transform: "scale(1)" }], { ...spring, delay: 40 + Math.min(index, 4) * 20, fill: "backwards" });
     } else {
       const x = before.left - after.left, y = before.top - after.top;
       if (Math.abs(x) > 1 || Math.abs(y) > 1) playMotion(node, [{ transform: `translate(${x}px,${y}px)` }, { transform: "translate(0,0)" }], spring);
@@ -643,7 +663,12 @@ function updateDockOverflow() {
 elements.selectionList.addEventListener("scroll", updateDockOverflow, { passive: true });
 function mutateSelection(transform) {
   if (!state.selection || state.selectionError) { showToast(state.selectionError || "参考篮尚未就绪", true); return; }
-  state.selectionPending += 1; updateSelectionStatus();
+  state.selectionPending += 1;
+  if (state.selectionPending === 1) {
+    clearTimeout(state.selectionSlowTimer);
+    state.selectionSlowTimer = setTimeout(() => { state.selectionSlow = true; updateSelectionStatus(); }, 300);
+  }
+  updateSelectionStatus();
   state.selectionChain = state.selectionChain.then(async () => {
     if (state.selectionError) return;
     const assetIds = transform(state.selection.entries.map(entry => entry.id));
@@ -658,6 +683,7 @@ function mutateSelection(transform) {
     }
   }).catch(() => {}).finally(async () => {
     state.selectionPending -= 1;
+    if (!state.selectionPending) { clearTimeout(state.selectionSlowTimer); state.selectionSlow = false; }
     if (!state.selectionPending && state.selectionError) await loadSelection();
     updateSelectionStatus();
   });
@@ -721,7 +747,10 @@ function moveReference(id, offset) {
 }
 async function copySelection() {
   if (state.pendingCopies.size || state.copyingSelection) { showToast("正在复制，请稍候"); return; }
-  if (elements.copySelection.dataset.blocked === "true") { showToast(elements.selectionHint.textContent || "参考篮暂时不能复制", true); return; }
+  if (elements.copySelection.dataset.blocked === "true") {
+    showToast(state.selectionPending ? "正在保存参考篮，请稍候" : elements.selectionHint.textContent || "参考篮暂时不能复制", !state.selectionPending);
+    return;
+  }
   clearCopyFeedback();
   state.copyingSelection = true; updateSelectionStatus();
   const expectedCount = state.selection.entries.length;
@@ -1262,9 +1291,27 @@ function updateChromeVisibility() {
 window.addEventListener("scroll", updateChromeVisibility, { passive: true });
 elements.searchInput.addEventListener("focus", () => document.body.classList.remove("chrome-tucked"));
 if (typeof ResizeObserver !== "undefined" && chrome) new ResizeObserver(measureChrome).observe(chrome);
-if (typeof ResizeObserver !== "undefined") new ResizeObserver(() => {
-  document.documentElement.style.setProperty("--tray-height", `${elements.referenceTray.getBoundingClientRect().height}px`);
-}).observe(elements.referenceTray);
+// The dock's height feeds the page's bottom padding and the toast offset. Apply it once
+// the dock settles, and only to those two elements: a custom property on :root
+// restyled every card on every animation frame.
+const appShell = document.querySelector(".app-shell");
+let appliedTrayHeight = null, trayHeightPending = false;
+function applyTrayHeight() {
+  const tray = elements.referenceTray;
+  const running = tray.getAnimations?.().filter(animation => animation.playState === "running") ?? [];
+  if (running.length) {
+    if (trayHeightPending) return;
+    trayHeightPending = true;
+    Promise.all(running.map(animation => animation.finished.catch(() => {}))).then(() => { trayHeightPending = false; applyTrayHeight(); });
+    return;
+  }
+  const height = Math.round(tray.getBoundingClientRect().height);
+  if (height === appliedTrayHeight) return;
+  appliedTrayHeight = height;
+  if (appShell?.style) appShell.style.paddingBottom = `${height + 22}px`;
+  if (elements.toast?.style) elements.toast.style.bottom = `${height + 30}px`;
+}
+if (typeof ResizeObserver !== "undefined") new ResizeObserver(applyTrayHeight).observe(elements.referenceTray);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) schedulePoll(0); });
 window.addEventListener("beforeunload", () => {
   thumbnailObserver?.disconnect();
