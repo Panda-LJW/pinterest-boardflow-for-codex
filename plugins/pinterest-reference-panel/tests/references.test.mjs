@@ -131,3 +131,42 @@ test("HTTP references serve original bytes, protect mutations, keep paths privat
   assert.equal((await call("/api/inbox?sort=invalid")).status, 400);
   assert.equal((await call(`/api/inbox?q=${"x".repeat(201)}`)).status, 400);
 });
+
+test("durable baskets preserve order, isolation, revisions and fingerprints across restarts", async t => {
+  const { inbox, assets, root } = await fixture(t);
+  const path = join(root, "state", "references.json");
+  const first = new ReferenceSessions(inbox, path);
+  const a = first.create(), b = first.create();
+  const ids = assets.slice(0, 2).map(asset => asset.id).reverse();
+  await first.replace(a, ids, 0);
+  const restored = new ReferenceSessions(inbox, path);
+  assert.deepEqual((await restored.resolve(a, 1)).files.map(file => file.assetId), ids);
+  assert.equal((await restored.describe(b)).entries.length, 0);
+  assert.equal((await stat(path)).mode & 0o777, 0o600);
+  const changed = await inbox.resolveAsset(ids[0]);
+  await writeFile(changed.sourcePath, "changed after restart");
+  await assert.rejects(restored.resolve(a, 1), /已变化/);
+  await restored.replace(a, ids.slice().reverse(), 1);
+  const third = new ReferenceSessions(inbox, path);
+  await assert.rejects(third.resolve(a, 2), /已变化/);
+  third.forget(ids[0]);
+  assert.deepEqual((await new ReferenceSessions(inbox, path).resolve(a, 3)).files.map(file => file.assetId), [ids[1]]);
+});
+
+test("unreadable durable state is not silently reset and failed saves do not publish a revision", async t => {
+  const { inbox, assets, root } = await fixture(t);
+  const path = join(root, "state", "references.json");
+  const references = new ReferenceSessions(inbox, path);
+  const id = references.create();
+  await references.replace(id, [assets[0].id], 0);
+  const bytes = await readFile(path);
+  await rm(path);
+  await mkdir(path); // Atomic replacement must fail against a directory.
+  await assert.rejects(references.replace(id, [], 1));
+  assert.equal((await references.resolve(id, 1)).files[0].assetId, assets[0].id);
+  await rm(path, { recursive: true });
+  await writeFile(path, "invalid json");
+  assert.throws(() => new ReferenceSessions(inbox, path));
+  await writeFile(path, bytes);
+  assert.equal((await new ReferenceSessions(inbox, path).resolve(id, 1)).files.length, 1);
+});

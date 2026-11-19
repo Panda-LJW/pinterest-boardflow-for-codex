@@ -2979,7 +2979,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve3.call(this, root, ref);
+      let _sch = resolve4.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -3006,7 +3006,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve3(root, ref) {
+    function resolve4(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3870,7 +3870,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve3(baseURI, relativeURI, options) {
+    function resolve4(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -4261,7 +4261,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve3,
+      resolve: resolve4,
       resolveComponent,
       equal,
       serialize,
@@ -7251,9 +7251,9 @@ var require_dist = __commonJS({
 });
 
 // src/server.ts
-import { readFileSync } from "node:fs";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
-import { dirname as dirname4, join as join4 } from "node:path";
+import { readFileSync as readFileSync3 } from "node:fs";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
+import { dirname as dirname5, join as join5 } from "node:path";
 
 // ../../node_modules/zod/v3/helpers/util.js
 var util;
@@ -15955,7 +15955,7 @@ var recursive = /* @__PURE__ */ new WeakMap();
 var NONE = 0;
 var ASSUMED = 1;
 var PROVEN = 2;
-function isRecursive(inst, stack, resolve3) {
+function isRecursive(inst, stack, resolve4) {
   const cached2 = recursive.get(inst);
   if (cached2 !== void 0)
     return cached2 ? PROVEN : NONE;
@@ -15965,7 +15965,7 @@ function isRecursive(inst, stack, resolve3) {
   let result = NONE;
   const check2 = (child) => {
     if (result !== PROVEN && child?._zod) {
-      const answer = isRecursive(child, stack, resolve3);
+      const answer = isRecursive(child, stack, resolve4);
       if (answer > result)
         result = answer;
     }
@@ -15976,7 +15976,7 @@ function isRecursive(inst, stack, resolve3) {
       const desc = Object.getOwnPropertyDescriptor(sh, key);
       if (spread && !desc.enumerable)
         continue;
-      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve3) : NONE;
+      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve4) : NONE;
       if (child > answer)
         answer = child;
     }
@@ -16040,7 +16040,7 @@ function isRecursive(inst, stack, resolve3) {
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
-      const inner = def._cachedInner ?? (resolve3 ? inst._zod.innerType : void 0);
+      const inner = def._cachedInner ?? (resolve4 ? inst._zod.innerType : void 0);
       merge2(inner ? isRecursive(inner, stack, false) : ASSUMED);
       break;
     }
@@ -32468,17 +32468,17 @@ var CompleteRequestSchema = RequestSchema.extend({
   method: literal("completion/complete"),
   params: CompleteRequestParamsSchema
 });
-function assertCompleteRequestPrompt(request) {
-  if (request.params.ref.type !== "ref/prompt") {
-    throw new TypeError(`Expected CompleteRequestPrompt, but got ${request.params.ref.type}`);
+function assertCompleteRequestPrompt(request2) {
+  if (request2.params.ref.type !== "ref/prompt") {
+    throw new TypeError(`Expected CompleteRequestPrompt, but got ${request2.params.ref.type}`);
   }
-  void request;
+  void request2;
 }
-function assertCompleteRequestResourceTemplate(request) {
-  if (request.params.ref.type !== "ref/resource") {
-    throw new TypeError(`Expected CompleteRequestResourceTemplate, but got ${request.params.ref.type}`);
+function assertCompleteRequestResourceTemplate(request2) {
+  if (request2.params.ref.type !== "ref/resource") {
+    throw new TypeError(`Expected CompleteRequestResourceTemplate, but got ${request2.params.ref.type}`);
   }
-  void request;
+  void request2;
 }
 var CompleteResultSchema = ResultSchema.extend({
   completion: looseObject({
@@ -33985,8 +33985,8 @@ var Protocol = class {
     this._taskStore = _options?.taskStore;
     this._taskMessageQueue = _options?.taskMessageQueue;
     if (this._taskStore) {
-      this.setRequestHandler(GetTaskRequestSchema, async (request, extra) => {
-        const task = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
+      this.setRequestHandler(GetTaskRequestSchema, async (request2, extra) => {
+        const task = await this._taskStore.getTask(request2.params.taskId, extra.sessionId);
         if (!task) {
           throw new McpError(ErrorCode.InvalidParams, "Failed to retrieve task: Task not found");
         }
@@ -33994,9 +33994,9 @@ var Protocol = class {
           ...task
         };
       });
-      this.setRequestHandler(GetTaskPayloadRequestSchema, async (request, extra) => {
+      this.setRequestHandler(GetTaskPayloadRequestSchema, async (request2, extra) => {
         const handleTaskResult = async () => {
-          const taskId = request.params.taskId;
+          const taskId = request2.params.taskId;
           if (!await this._taskStore.getTask(taskId, extra.sessionId)) {
             throw new McpError(ErrorCode.InvalidParams, `Task not found: ${taskId}`);
           }
@@ -34050,9 +34050,9 @@ var Protocol = class {
         };
         return await handleTaskResult();
       });
-      this.setRequestHandler(ListTasksRequestSchema, async (request, extra) => {
+      this.setRequestHandler(ListTasksRequestSchema, async (request2, extra) => {
         try {
-          const { tasks, nextCursor } = await this._taskStore.listTasks(request.params?.cursor, extra.sessionId);
+          const { tasks, nextCursor } = await this._taskStore.listTasks(request2.params?.cursor, extra.sessionId);
           return {
             tasks,
             nextCursor,
@@ -34062,20 +34062,20 @@ var Protocol = class {
           throw new McpError(ErrorCode.InvalidParams, `Failed to list tasks: ${error62 instanceof Error ? error62.message : String(error62)}`);
         }
       });
-      this.setRequestHandler(CancelTaskRequestSchema, async (request, extra) => {
+      this.setRequestHandler(CancelTaskRequestSchema, async (request2, extra) => {
         try {
-          const task = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
+          const task = await this._taskStore.getTask(request2.params.taskId, extra.sessionId);
           if (!task) {
-            throw new McpError(ErrorCode.InvalidParams, `Task not found: ${request.params.taskId}`);
+            throw new McpError(ErrorCode.InvalidParams, `Task not found: ${request2.params.taskId}`);
           }
           if (isTerminal(task.status)) {
             throw new McpError(ErrorCode.InvalidParams, `Cannot cancel task in terminal status: ${task.status}`);
           }
-          await this._taskStore.updateTaskStatus(request.params.taskId, "cancelled", "Client cancelled task execution.", extra.sessionId);
-          this._clearTaskQueue(request.params.taskId, extra.sessionId);
-          const cancelledTask = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
+          await this._taskStore.updateTaskStatus(request2.params.taskId, "cancelled", "Client cancelled task execution.", extra.sessionId);
+          this._clearTaskQueue(request2.params.taskId, extra.sessionId);
+          const cancelledTask = await this._taskStore.getTask(request2.params.taskId, extra.sessionId);
           if (!cancelledTask) {
-            throw new McpError(ErrorCode.InvalidParams, `Task not found after cancellation: ${request.params.taskId}`);
+            throw new McpError(ErrorCode.InvalidParams, `Task not found after cancellation: ${request2.params.taskId}`);
           }
           return {
             _meta: {},
@@ -34196,10 +34196,10 @@ var Protocol = class {
     }
     Promise.resolve().then(() => handler(notification)).catch((error62) => this._onerror(new Error(`Uncaught error in notification handler: ${error62}`)));
   }
-  _onrequest(request, extra) {
-    const handler = this._requestHandlers.get(request.method) ?? this.fallbackRequestHandler;
+  _onrequest(request2, extra) {
+    const handler = this._requestHandlers.get(request2.method) ?? this.fallbackRequestHandler;
     const capturedTransport = this._transport;
-    const relatedTaskId = request.params?._meta?.[RELATED_TASK_META_KEY]?.taskId;
+    const relatedTaskId = request2.params?._meta?.[RELATED_TASK_META_KEY]?.taskId;
     const sessionId = capturedTransport?.sessionId;
     const store = this._taskStore;
     let relatedTaskFound = true;
@@ -34216,7 +34216,7 @@ var Protocol = class {
     if (handler === void 0) {
       const errorResponse = {
         jsonrpc: "2.0",
-        id: request.id,
+        id: request2.id,
         error: {
           code: ErrorCode.MethodNotFound,
           message: "Method not found"
@@ -34237,17 +34237,17 @@ var Protocol = class {
       return;
     }
     const abortController = new AbortController();
-    this._requestHandlerAbortControllers.set(request.id, abortController);
-    const taskCreationParams = isTaskAugmentedRequestParams(request.params) ? request.params.task : void 0;
-    const taskStore = this._taskStore ? this.requestTaskStore(request, capturedTransport?.sessionId) : void 0;
+    this._requestHandlerAbortControllers.set(request2.id, abortController);
+    const taskCreationParams = isTaskAugmentedRequestParams(request2.params) ? request2.params.task : void 0;
+    const taskStore = this._taskStore ? this.requestTaskStore(request2, capturedTransport?.sessionId) : void 0;
     const fullExtra = {
       signal: abortController.signal,
       sessionId: capturedTransport?.sessionId,
-      _meta: request.params?._meta,
+      _meta: request2.params?._meta,
       sendNotification: async (notification) => {
         if (abortController.signal.aborted)
           return;
-        const notificationOptions = { relatedRequestId: request.id };
+        const notificationOptions = { relatedRequestId: request2.id };
         if (relatedTaskId) {
           notificationOptions.relatedTask = { taskId: relatedTaskId };
         }
@@ -34257,7 +34257,7 @@ var Protocol = class {
         if (abortController.signal.aborted) {
           throw new McpError(ErrorCode.ConnectionClosed, "Request was cancelled");
         }
-        const requestOptions = { ...options, relatedRequestId: request.id };
+        const requestOptions = { ...options, relatedRequestId: request2.id };
         if (relatedTaskId && !requestOptions.relatedTask) {
           requestOptions.relatedTask = { taskId: relatedTaskId };
         }
@@ -34268,7 +34268,7 @@ var Protocol = class {
         return await this.request(r, resultSchema, requestOptions);
       },
       authInfo: extra?.authInfo,
-      requestId: request.id,
+      requestId: request2.id,
       requestInfo: extra?.requestInfo,
       taskId: relatedTaskId,
       taskStore,
@@ -34281,16 +34281,16 @@ var Protocol = class {
         throw new McpError(ErrorCode.ConnectionClosed, "Request was cancelled");
       }
       if (taskCreationParams) {
-        this.assertTaskHandlerCapability(request.method);
+        this.assertTaskHandlerCapability(request2.method);
       }
-    }).then(() => handler(request, fullExtra)).then(async (result) => {
+    }).then(() => handler(request2, fullExtra)).then(async (result) => {
       if (abortController.signal.aborted) {
         return;
       }
       const response = {
         result,
         jsonrpc: "2.0",
-        id: request.id
+        id: request2.id
       };
       if (relatedTaskId && this._taskMessageQueue) {
         await this._enqueueTaskMessage(relatedTaskId, {
@@ -34307,7 +34307,7 @@ var Protocol = class {
       }
       const errorResponse = {
         jsonrpc: "2.0",
-        id: request.id,
+        id: request2.id,
         error: {
           code: Number.isSafeInteger(error62["code"]) ? error62["code"] : ErrorCode.InternalError,
           message: error62.message ?? "Internal error",
@@ -34324,8 +34324,8 @@ var Protocol = class {
         await capturedTransport?.send(errorResponse);
       }
     }).catch((error62) => this._onerror(new Error(`Failed to send response: ${error62}`))).finally(() => {
-      if (this._requestHandlerAbortControllers.get(request.id) === abortController) {
-        this._requestHandlerAbortControllers.delete(request.id);
+      if (this._requestHandlerAbortControllers.get(request2.id) === abortController) {
+        this._requestHandlerAbortControllers.delete(request2.id);
       }
     });
   }
@@ -34429,11 +34429,11 @@ var Protocol = class {
    *
    * @experimental Use `client.experimental.tasks.requestStream()` to access this method.
    */
-  async *requestStream(request, resultSchema, options) {
+  async *requestStream(request2, resultSchema, options) {
     const { task } = options ?? {};
     if (!task) {
       try {
-        const result = await this.request(request, resultSchema, options);
+        const result = await this.request(request2, resultSchema, options);
         yield { type: "result", result };
       } catch (error62) {
         yield {
@@ -34445,7 +34445,7 @@ var Protocol = class {
     }
     let taskId;
     try {
-      const createResult = await this.request(request, CreateTaskResultSchema, options);
+      const createResult = await this.request(request2, CreateTaskResultSchema, options);
       if (createResult.task) {
         taskId = createResult.task.taskId;
         yield { type: "taskCreated", task: createResult.task };
@@ -34478,7 +34478,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
+        await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error62) {
@@ -34493,9 +34493,9 @@ var Protocol = class {
    *
    * Do not use this method to emit notifications! Use notification() instead.
    */
-  request(request, resultSchema, options) {
+  request(request2, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       const earlyReject = (error62) => {
         reject(error62);
       };
@@ -34505,9 +34505,9 @@ var Protocol = class {
       }
       if (this._options?.enforceStrictCapabilities === true) {
         try {
-          this.assertCapabilityForMethod(request.method);
+          this.assertCapabilityForMethod(request2.method);
           if (task) {
-            this.assertTaskCapability(request.method);
+            this.assertTaskCapability(request2.method);
           }
         } catch (e) {
           earlyReject(e);
@@ -34517,16 +34517,16 @@ var Protocol = class {
       options?.signal?.throwIfAborted();
       const messageId = this._requestMessageId++;
       const jsonrpcRequest = {
-        ...request,
+        ...request2,
         jsonrpc: "2.0",
         id: messageId
       };
       if (options?.onprogress) {
         this._progressHandlers.set(messageId, options.onprogress);
         jsonrpcRequest.params = {
-          ...request.params,
+          ...request2.params,
           _meta: {
-            ...request.params?._meta || {},
+            ...request2.params?._meta || {},
             progressToken: messageId
           }
         };
@@ -34573,7 +34573,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve3(parseResult.data);
+            resolve4(parseResult.data);
           }
         } catch (error62) {
           reject(error62);
@@ -34730,8 +34730,8 @@ var Protocol = class {
   setRequestHandler(requestSchema, handler) {
     const method = getMethodLiteral(requestSchema);
     this.assertRequestHandlerCapability(method);
-    this._requestHandlers.set(method, (request, extra) => {
-      const parsed = parseWithCompat(requestSchema, request);
+    this._requestHandlers.set(method, (request2, extra) => {
+      const parsed = parseWithCompat(requestSchema, request2);
       return Promise.resolve(handler(parsed, extra));
     });
   }
@@ -34835,31 +34835,31 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve3, interval);
+      const timeoutId = setTimeout(resolve4, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
       }, { once: true });
     });
   }
-  requestTaskStore(request, sessionId) {
+  requestTaskStore(request2, sessionId) {
     const taskStore = this._taskStore;
     if (!taskStore) {
       throw new Error("No task store configured");
     }
     return {
       createTask: async (taskParams) => {
-        if (!request) {
+        if (!request2) {
           throw new Error("No request provided");
         }
-        return await taskStore.createTask(taskParams, request.id, {
-          method: request.method,
-          params: request.params
+        return await taskStore.createTask(taskParams, request2.id, {
+          method: request2.method,
+          params: request2.params
         }, sessionId);
       },
       getTask: async (taskId) => {
@@ -35020,8 +35020,8 @@ var ExperimentalServerTasks = class {
    *
    * @experimental
    */
-  requestStream(request, resultSchema, options) {
-    return this._server.requestStream(request, resultSchema, options);
+  requestStream(request2, resultSchema, options) {
+    return this._server.requestStream(request2, resultSchema, options);
   }
   /**
    * Sends a sampling request and returns an AsyncGenerator that yields response messages.
@@ -35266,12 +35266,12 @@ var Server = class extends Protocol {
     this._capabilities = options?.capabilities ?? {};
     this._instructions = options?.instructions;
     this._jsonSchemaValidator = options?.jsonSchemaValidator ?? new AjvJsonSchemaValidator();
-    this.setRequestHandler(InitializeRequestSchema, (request) => this._oninitialize(request));
+    this.setRequestHandler(InitializeRequestSchema, (request2) => this._oninitialize(request2));
     this.setNotificationHandler(InitializedNotificationSchema, () => this.oninitialized?.());
     if (this._capabilities.logging) {
-      this.setRequestHandler(SetLevelRequestSchema, async (request, extra) => {
+      this.setRequestHandler(SetLevelRequestSchema, async (request2, extra) => {
         const transportSessionId = extra.sessionId || extra.requestInfo?.headers["mcp-session-id"] || void 0;
-        const { level } = request.params;
+        const { level } = request2.params;
         const parseResult = LoggingLevelSchema.safeParse(level);
         if (parseResult.success) {
           this._loggingLevels.set(transportSessionId, parseResult.data);
@@ -35321,14 +35321,14 @@ var Server = class extends Protocol {
     }
     const method = methodValue;
     if (method === "tools/call") {
-      const wrappedHandler = async (request, extra) => {
-        const validatedRequest = safeParse2(CallToolRequestSchema, request);
+      const wrappedHandler = async (request2, extra) => {
+        const validatedRequest = safeParse2(CallToolRequestSchema, request2);
         if (!validatedRequest.success) {
           const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
           throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage}`);
         }
         const { params } = validatedRequest.data;
-        const result = await Promise.resolve(handler(request, extra));
+        const result = await Promise.resolve(handler(request2, extra));
         if (params.task) {
           const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
           if (!taskValidationResult.success) {
@@ -35459,10 +35459,10 @@ var Server = class extends Protocol {
     }
     assertToolsCallTaskCapability(this._capabilities.tasks?.requests, method, "Server");
   }
-  async _oninitialize(request) {
-    const requestedVersion = request.params.protocolVersion;
-    this._clientCapabilities = request.params.capabilities;
-    this._clientVersion = request.params.clientInfo;
+  async _oninitialize(request2) {
+    const requestedVersion = request2.params.protocolVersion;
+    this._clientCapabilities = request2.params.capabilities;
+    this._clientVersion = request2.params.clientInfo;
     const protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(requestedVersion) ? requestedVersion : LATEST_PROTOCOL_VERSION;
     return {
       protocolVersion,
@@ -35835,33 +35835,33 @@ var McpServer = class {
         return toolDefinition;
       })
     }));
-    this.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    this.server.setRequestHandler(CallToolRequestSchema, async (request2, extra) => {
       try {
-        const tool = this._registeredTools[request.params.name];
+        const tool = this._registeredTools[request2.params.name];
         if (!tool) {
-          throw new McpError(ErrorCode.InvalidParams, `Tool ${request.params.name} not found`);
+          throw new McpError(ErrorCode.InvalidParams, `Tool ${request2.params.name} not found`);
         }
         if (!tool.enabled) {
-          throw new McpError(ErrorCode.InvalidParams, `Tool ${request.params.name} disabled`);
+          throw new McpError(ErrorCode.InvalidParams, `Tool ${request2.params.name} disabled`);
         }
-        const isTaskRequest = !!request.params.task;
+        const isTaskRequest = !!request2.params.task;
         const taskSupport = tool.execution?.taskSupport;
         const isTaskHandler = "createTask" in tool.handler;
         if ((taskSupport === "required" || taskSupport === "optional") && !isTaskHandler) {
-          throw new McpError(ErrorCode.InternalError, `Tool ${request.params.name} has taskSupport '${taskSupport}' but was not registered with registerToolTask`);
+          throw new McpError(ErrorCode.InternalError, `Tool ${request2.params.name} has taskSupport '${taskSupport}' but was not registered with registerToolTask`);
         }
         if (taskSupport === "required" && !isTaskRequest) {
-          throw new McpError(ErrorCode.MethodNotFound, `Tool ${request.params.name} requires task augmentation (taskSupport: 'required')`);
+          throw new McpError(ErrorCode.MethodNotFound, `Tool ${request2.params.name} requires task augmentation (taskSupport: 'required')`);
         }
         if (taskSupport === "optional" && !isTaskRequest && isTaskHandler) {
-          return await this.handleAutomaticTaskPolling(tool, request, extra);
+          return await this.handleAutomaticTaskPolling(tool, request2, extra);
         }
-        const args = await this.validateToolInput(tool, request.params.arguments, request.params.name);
+        const args = await this.validateToolInput(tool, request2.params.arguments, request2.params.name);
         const result = await this.executeToolHandler(tool, args, extra);
         if (isTaskRequest) {
           return result;
         }
-        await this.validateToolOutput(tool, result, request.params.name);
+        await this.validateToolOutput(tool, result, request2.params.name);
         return result;
       } catch (error62) {
         if (error62 instanceof McpError) {
@@ -35965,11 +35965,11 @@ var McpServer = class {
   /**
    * Handles automatic task polling for tools with taskSupport 'optional'.
    */
-  async handleAutomaticTaskPolling(tool, request, extra) {
+  async handleAutomaticTaskPolling(tool, request2, extra) {
     if (!extra.taskStore) {
       throw new Error("No task store provided for task-capable tool.");
     }
-    const args = await this.validateToolInput(tool, request.params.arguments, request.params.name);
+    const args = await this.validateToolInput(tool, request2.params.arguments, request2.params.name);
     const handler = tool.handler;
     const taskExtra = { ...extra, taskStore: extra.taskStore };
     const createTaskResult = args ? await Promise.resolve(handler.createTask(args, taskExtra)) : (
@@ -35980,7 +35980,7 @@ var McpServer = class {
     let task = createTaskResult.task;
     const pollInterval = task.pollInterval ?? 5e3;
     while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-      await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
+      await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
       const updatedTask = await extra.taskStore.getTask(taskId);
       if (!updatedTask) {
         throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -35997,21 +35997,21 @@ var McpServer = class {
     this.server.registerCapabilities({
       completions: {}
     });
-    this.server.setRequestHandler(CompleteRequestSchema, async (request) => {
-      switch (request.params.ref.type) {
+    this.server.setRequestHandler(CompleteRequestSchema, async (request2) => {
+      switch (request2.params.ref.type) {
         case "ref/prompt":
-          assertCompleteRequestPrompt(request);
-          return this.handlePromptCompletion(request, request.params.ref);
+          assertCompleteRequestPrompt(request2);
+          return this.handlePromptCompletion(request2, request2.params.ref);
         case "ref/resource":
-          assertCompleteRequestResourceTemplate(request);
-          return this.handleResourceCompletion(request, request.params.ref);
+          assertCompleteRequestResourceTemplate(request2);
+          return this.handleResourceCompletion(request2, request2.params.ref);
         default:
-          throw new McpError(ErrorCode.InvalidParams, `Invalid completion reference: ${request.params.ref}`);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid completion reference: ${request2.params.ref}`);
       }
     });
     this._completionHandlerInitialized = true;
   }
-  async handlePromptCompletion(request, ref) {
+  async handlePromptCompletion(request2, ref) {
     const prompt = this._registeredPrompts[ref.name];
     if (!prompt) {
       throw new McpError(ErrorCode.InvalidParams, `Prompt ${ref.name} not found`);
@@ -36023,7 +36023,7 @@ var McpServer = class {
       return EMPTY_COMPLETION_RESULT;
     }
     const promptShape = getObjectShape(prompt.argsSchema);
-    const field = promptShape?.[request.params.argument.name];
+    const field = promptShape?.[request2.params.argument.name];
     if (!isCompletable(field)) {
       return EMPTY_COMPLETION_RESULT;
     }
@@ -36031,22 +36031,22 @@ var McpServer = class {
     if (!completer) {
       return EMPTY_COMPLETION_RESULT;
     }
-    const suggestions = await completer(request.params.argument.value, request.params.context);
+    const suggestions = await completer(request2.params.argument.value, request2.params.context);
     return createCompletionResult(suggestions);
   }
-  async handleResourceCompletion(request, ref) {
+  async handleResourceCompletion(request2, ref) {
     const template = Object.values(this._registeredResourceTemplates).find((t) => t.resourceTemplate.uriTemplate.toString() === ref.uri);
     if (!template) {
       if (this._registeredResources[ref.uri]) {
         return EMPTY_COMPLETION_RESULT;
       }
-      throw new McpError(ErrorCode.InvalidParams, `Resource template ${request.params.ref.uri} not found`);
+      throw new McpError(ErrorCode.InvalidParams, `Resource template ${request2.params.ref.uri} not found`);
     }
-    const completer = template.resourceTemplate.completeCallback(request.params.argument.name);
+    const completer = template.resourceTemplate.completeCallback(request2.params.argument.name);
     if (!completer) {
       return EMPTY_COMPLETION_RESULT;
     }
-    const suggestions = await completer(request.params.argument.value, request.params.context);
+    const suggestions = await completer(request2.params.argument.value, request2.params.context);
     return createCompletionResult(suggestions);
   }
   setResourceRequestHandlers() {
@@ -36061,7 +36061,7 @@ var McpServer = class {
         listChanged: true
       }
     });
-    this.server.setRequestHandler(ListResourcesRequestSchema, async (request, extra) => {
+    this.server.setRequestHandler(ListResourcesRequestSchema, async (request2, extra) => {
       const resources = Object.entries(this._registeredResources).filter(([_, resource]) => resource.enabled).map(([uri, resource]) => ({
         uri,
         name: resource.name,
@@ -36091,8 +36091,8 @@ var McpServer = class {
       }));
       return { resourceTemplates };
     });
-    this.server.setRequestHandler(ReadResourceRequestSchema, async (request, extra) => {
-      const uri = new URL(request.params.uri);
+    this.server.setRequestHandler(ReadResourceRequestSchema, async (request2, extra) => {
+      const uri = new URL(request2.params.uri);
       const resource = this._registeredResources[uri.toString()];
       if (resource) {
         if (!resource.enabled) {
@@ -36131,21 +36131,21 @@ var McpServer = class {
         };
       })
     }));
-    this.server.setRequestHandler(GetPromptRequestSchema, async (request, extra) => {
-      const prompt = this._registeredPrompts[request.params.name];
+    this.server.setRequestHandler(GetPromptRequestSchema, async (request2, extra) => {
+      const prompt = this._registeredPrompts[request2.params.name];
       if (!prompt) {
-        throw new McpError(ErrorCode.InvalidParams, `Prompt ${request.params.name} not found`);
+        throw new McpError(ErrorCode.InvalidParams, `Prompt ${request2.params.name} not found`);
       }
       if (!prompt.enabled) {
-        throw new McpError(ErrorCode.InvalidParams, `Prompt ${request.params.name} disabled`);
+        throw new McpError(ErrorCode.InvalidParams, `Prompt ${request2.params.name} disabled`);
       }
       if (prompt.argsSchema) {
         const argsObj = normalizeObjectSchema(prompt.argsSchema);
-        const parseResult = await safeParseAsync2(argsObj, request.params.arguments ?? {});
+        const parseResult = await safeParseAsync2(argsObj, request2.params.arguments ?? {});
         if (!parseResult.success) {
           const error62 = "error" in parseResult ? parseResult.error : "Unknown error";
           const errorMessage = getParseErrorMessage(error62);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid arguments for prompt ${request.params.name}: ${errorMessage}`);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid arguments for prompt ${request2.params.name}: ${errorMessage}`);
         }
         const args = parseResult.data;
         const cb = prompt.callback;
@@ -36644,12 +36644,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve3) => {
+    return new Promise((resolve4) => {
       const json2 = serializeMessage(message);
       if (this._stdout.write(json2)) {
-        resolve3();
+        resolve4();
       } else {
-        this._stdout.once("drain", resolve3);
+        this._stdout.once("drain", resolve4);
       }
     });
   }
@@ -37225,18 +37225,45 @@ var InboxService = class {
   }
 };
 
-// src/local-panel-server.ts
-import { randomBytes as randomBytes2 } from "node:crypto";
-import { constants as constants2, existsSync as existsSync2 } from "node:fs";
-import { open as open3, readFile as readFile2 } from "node:fs/promises";
-import { createServer } from "node:http";
-import { dirname as dirname2, join as join2 } from "node:path";
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
+// src/panel-daemon.ts
+import { createHash as createHash2 } from "node:crypto";
+import { spawn as spawn2 } from "node:child_process";
+import { chmodSync, closeSync, mkdirSync as mkdirSync2, openSync, readFileSync as readFileSync2, rmSync as rmSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { rm as rm2 } from "node:fs/promises";
+import { createServer as createServer2, request } from "node:http";
+import { homedir as homedir2, tmpdir } from "node:os";
+import { join as join3, resolve as resolve2 } from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
 
 // src/references.ts
-import { randomBytes } from "node:crypto";
+import { randomBytes as randomBytes2 } from "node:crypto";
 import { stat as stat2 } from "node:fs/promises";
+
+// src/persistent-state.ts
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { dirname as dirname2 } from "node:path";
+import { randomBytes } from "node:crypto";
+function readState(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch (error62) {
+    if (error62.code === "ENOENT") return void 0;
+    throw error62;
+  }
+}
+function writeState(path, value) {
+  mkdirSync(dirname2(path), { recursive: true, mode: 448 });
+  const temporary = `${path}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+  try {
+    writeFileSync(temporary, JSON.stringify(value), { mode: 384, flag: "wx", flush: true });
+    renameSync(temporary, path);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+
+// src/references.ts
 var MAX_REFERENCES = 10;
 var REFERENCE_SESSION_PATTERN = /^[a-f0-9]{32}$/;
 var ReferenceError2 = class extends Error {
@@ -37245,6 +37272,22 @@ var ReferenceError2 = class extends Error {
     this.status = status;
   }
 };
+var storedSessions = external_exports.object({ version: external_exports.literal(1), sessions: external_exports.array(external_exports.object({
+  id: external_exports.string().regex(REFERENCE_SESSION_PATTERN),
+  revision: external_exports.number().int().nonnegative(),
+  entries: external_exports.array(external_exports.object({ fingerprint: external_exports.string(), asset: external_exports.object({
+    id: external_exports.string().regex(/^[a-f0-9]{24}$/),
+    pinId: external_exports.string(),
+    boardId: external_exports.string(),
+    boardTitle: external_exports.string(),
+    title: external_exports.string(),
+    extension: external_exports.string(),
+    size: external_exports.number().nonnegative(),
+    updatedAt: external_exports.string(),
+    width: external_exports.number().nullable(),
+    height: external_exports.number().nullable()
+  }) })).max(MAX_REFERENCES)
+})) });
 function publicAsset(asset) {
   const { sourcePath: _path, sourceRelativePath: _relative, signature: _signature, ...value } = asset;
   return value;
@@ -37257,14 +37300,28 @@ async function fingerprint(path, indexed) {
   return `${value.dev}:${value.ino}:${value.size}:${value.mtimeMs}:${value.ctimeMs}`;
 }
 var ReferenceSessions = class {
-  constructor(inbox2) {
+  constructor(inbox2, statePath) {
     this.inbox = inbox2;
+    this.statePath = statePath;
+    const stored = statePath ? readState(statePath) : void 0;
+    if (stored !== void 0) {
+      for (const session of storedSessions.parse(stored).sessions) this.sessions.set(session.id, session);
+    }
   }
   sessions = /* @__PURE__ */ new Map();
+  save(updates) {
+    const next = new Map(this.sessions);
+    for (const session of updates) next.set(session.id, session);
+    if (this.statePath) writeState(this.statePath, { version: 1, sessions: [...next.values()] });
+    for (const session of updates) {
+      const current = this.sessions.get(session.id);
+      if (current) Object.assign(current, session);
+      else this.sessions.set(session.id, session);
+    }
+  }
   create() {
-    if (this.sessions.size >= 64) throw new ReferenceError2(409, "\u53C2\u8003\u4F1A\u8BDD\u5DF2\u8FBE\u4E0A\u9650\uFF0C\u8BF7\u91CD\u542F\u63D2\u4EF6\u540E\u91CD\u65B0\u9009\u62E9\u56FE\u7247");
-    const session = { id: randomBytes(16).toString("hex"), revision: 0, entries: [] };
-    this.sessions.set(session.id, session);
+    const session = { id: randomBytes2(16).toString("hex"), revision: 0, entries: [] };
+    this.save([session]);
     return session.id;
   }
   require(id) {
@@ -37274,12 +37331,13 @@ var ReferenceSessions = class {
   }
   // Drops a removed asset from every basket so no task keeps a dead reference.
   forget(assetId) {
+    const updates = [];
     for (const session of this.sessions.values()) {
       const entries = session.entries.filter((entry) => entry.asset.id !== assetId);
       if (entries.length === session.entries.length) continue;
-      session.entries = entries;
-      session.revision += 1;
+      updates.push({ ...session, entries, revision: session.revision + 1 });
     }
+    if (updates.length) this.save(updates);
   }
   async describe(id) {
     const session = this.require(id);
@@ -37313,8 +37371,7 @@ var ReferenceSessions = class {
     }));
     if (session.revision !== expectedRevision) throw new ReferenceError2(409, "\u53C2\u8003\u7BEE\u5DF2\u5728\u5176\u4ED6\u9875\u9762\u66F4\u65B0\uFF0C\u8BF7\u67E5\u770B\u6700\u65B0\u9009\u62E9\u540E\u91CD\u8BD5");
     if (session.entries.map((entry) => entry.asset.id).join() !== assetIds.join()) {
-      session.entries = entries;
-      session.revision += 1;
+      this.save([{ ...session, entries, revision: session.revision + 1 }]);
     }
     return this.describe(id);
   }
@@ -37339,6 +37396,13 @@ var ReferenceSessions = class {
 };
 
 // src/local-panel-server.ts
+import { randomBytes as randomBytes3 } from "node:crypto";
+import { constants as constants2, existsSync as existsSync2 } from "node:fs";
+import { open as open3, readFile as readFile2 } from "node:fs/promises";
+import { createServer } from "node:http";
+import { dirname as dirname3, join as join2 } from "node:path";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 var LOOPBACK_HOST = "127.0.0.1";
 var MAX_JSON_BYTES = 2048;
 var MAX_TRASH_BATCH = 100;
@@ -37364,48 +37428,48 @@ function sendJson(response, status, value) {
   response.writeHead(status, { ...commonHeaders(), "Content-Type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(value));
 }
-function requestCookie(request, name) {
-  const cookieHeader = request.headers.cookie ?? "";
+function requestCookie(request2, name) {
+  const cookieHeader = request2.headers.cookie ?? "";
   for (const entry of cookieHeader.split(";")) {
     const [key, ...parts] = entry.trim().split("=");
     if (key === name) return parts.join("=");
   }
   return null;
 }
-function assertLoopbackRequest(request, expectedHost) {
-  const remoteAddress = request.socket.remoteAddress;
+function assertLoopbackRequest(request2, expectedHost) {
+  const remoteAddress = request2.socket.remoteAddress;
   if (remoteAddress !== LOOPBACK_HOST && remoteAddress !== `::ffff:${LOOPBACK_HOST}`) {
     throw new HttpError(403, "\u4EC5\u5141\u8BB8\u672C\u673A\u8BBF\u95EE Pinterest BoardFlow \u9762\u677F");
   }
-  if (request.headers.host !== expectedHost) {
+  if (request2.headers.host !== expectedHost) {
     throw new HttpError(421, "\u8BF7\u6C42\u4E3B\u673A\u4E0E\u672C\u5730\u9762\u677F\u4E0D\u5339\u914D");
   }
 }
-function assertApiSession(request, sessionId, csrfToken, cookieName) {
-  if (requestCookie(request, cookieName) !== sessionId) {
+function assertApiSession(request2, sessionId, csrfToken, cookieName) {
+  if (requestCookie(request2, cookieName) !== sessionId) {
     throw new HttpError(401, "\u672C\u5730\u9762\u677F\u4F1A\u8BDD\u5DF2\u5931\u6548\uFF0C\u8BF7\u5237\u65B0\u9875\u9762");
   }
-  if (request.headers["x-pinterest-panel-token"] !== csrfToken) {
+  if (request2.headers["x-pinterest-panel-token"] !== csrfToken) {
     throw new HttpError(403, "\u672C\u5730\u9762\u677F\u4EE4\u724C\u65E0\u6548\uFF0C\u8BF7\u5237\u65B0\u9875\u9762");
   }
 }
-function assertSameOriginMutation(request, origin) {
-  if (request.headers.origin !== origin) {
+function assertSameOriginMutation(request2, origin) {
+  if (request2.headers.origin !== origin) {
     throw new HttpError(403, "\u62D2\u7EDD\u6765\u81EA\u5176\u4ED6\u9875\u9762\u7684\u5199\u64CD\u4F5C");
   }
-  const fetchSite = request.headers["sec-fetch-site"];
+  const fetchSite = request2.headers["sec-fetch-site"];
   if (fetchSite && fetchSite !== "same-origin") {
     throw new HttpError(403, "\u62D2\u7EDD\u8DE8\u7AD9\u5199\u64CD\u4F5C");
   }
-  const contentType = request.headers["content-type"] ?? "";
+  const contentType = request2.headers["content-type"] ?? "";
   if (!contentType.toLowerCase().startsWith("application/json")) {
     throw new HttpError(415, "\u8BF7\u6C42\u5FC5\u987B\u4F7F\u7528 JSON");
   }
 }
-async function readJson(request, maxBytes = MAX_JSON_BYTES) {
+async function readJson(request2, maxBytes = MAX_JSON_BYTES) {
   const chunks = [];
   let size = 0;
-  for await (const chunk of request) {
+  for await (const chunk of request2) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.byteLength;
     if (size > maxBytes) throw new HttpError(413, "\u8BF7\u6C42\u5185\u5BB9\u8FC7\u5927");
@@ -37489,7 +37553,7 @@ async function writeTextToMacClipboard(text) {
   }
 }
 async function startLocalPanelServer(options) {
-  const moduleDirectory2 = dirname2(fileURLToPath(import.meta.url));
+  const moduleDirectory2 = dirname3(fileURLToPath(import.meta.url));
   const assetRoot = options.assetRoot ?? join2(moduleDirectory2, "../assets");
   const [htmlTemplate, css, javascript] = await Promise.all([
     readFile2(join2(assetRoot, "local-panel.html"), "utf8"),
@@ -37497,17 +37561,17 @@ async function startLocalPanelServer(options) {
     readFile2(join2(assetRoot, "local-panel.js"), "utf8")
   ]);
   const clipboardWriter = options.clipboardWriter ?? writeTextToMacClipboard;
-  const references2 = options.references ?? new ReferenceSessions(options.inbox);
-  const sessionId = randomBytes2(24).toString("base64url");
-  const csrfToken = randomBytes2(24).toString("base64url");
+  const references = options.references ?? new ReferenceSessions(options.inbox);
+  const sessionId = randomBytes3(24).toString("base64url");
+  const csrfToken = randomBytes3(24).toString("base64url");
   let origin = "";
   let expectedHost = "";
   let cookieName = "";
-  const httpServer = createServer((request, response) => {
+  const httpServer = createServer((request2, response) => {
     void (async () => {
-      assertLoopbackRequest(request, expectedHost);
-      const method = request.method ?? "GET";
-      const requestUrl = new URL(request.url ?? "/", origin);
+      assertLoopbackRequest(request2, expectedHost);
+      const method = request2.method ?? "GET";
+      const requestUrl = new URL(request2.url ?? "/", origin);
       if (method === "GET" && requestUrl.pathname === "/") {
         const referenceSessionId2 = requestUrl.searchParams.get("ref") ?? "";
         if (referenceSessionId2 && !REFERENCE_SESSION_PATTERN.test(referenceSessionId2)) throw new HttpError(400, "\u53C2\u8003\u4F1A\u8BDD\u5730\u5740\u65E0\u6548");
@@ -37537,15 +37601,15 @@ async function startLocalPanelServer(options) {
         return;
       }
       if (!requestUrl.pathname.startsWith("/api/")) throw new HttpError(404, "\u9875\u9762\u4E0D\u5B58\u5728");
-      assertApiSession(request, sessionId, csrfToken, cookieName);
+      assertApiSession(request2, sessionId, csrfToken, cookieName);
       const referenceSessionId = () => {
-        const id = request.headers["x-pinterest-reference-session"];
+        const id = request2.headers["x-pinterest-reference-session"];
         if (typeof id !== "string") throw new HttpError(400, "\u8BF7\u4ECE\u5F53\u524D AI \u52A9\u624B\u4EFB\u52A1\u6253\u5F00\u53C2\u8003\u7BEE");
-        references2.require(id);
+        references.require(id);
         return id;
       };
       if (method === "GET" && requestUrl.pathname === "/api/references") {
-        sendJson(response, 200, await references2.describe(referenceSessionId()));
+        sendJson(response, 200, await references.describe(referenceSessionId()));
         return;
       }
       if (method === "GET" && requestUrl.pathname === "/api/status") {
@@ -37606,27 +37670,27 @@ async function startLocalPanelServer(options) {
         }
         return;
       }
-      if (method === "POST") assertSameOriginMutation(request, origin);
+      if (method === "POST") assertSameOriginMutation(request2, origin);
       if (method === "POST" && requestUrl.pathname === "/api/references") {
-        const body = await readJson(request);
+        const body = await readJson(request2);
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "\u53C2\u8003\u7BEE\u8BF7\u6C42\u65E0\u6548");
         const value = body;
         if (Object.keys(body).sort().join() !== "assetIds,revision" || !Array.isArray(value.assetIds) || !value.assetIds.every((id) => typeof id === "string") || !Number.isInteger(value.revision) || Number(value.revision) < 0) {
           throw new HttpError(400, "\u53C2\u8003\u7BEE\u53EA\u80FD\u63D0\u4EA4\u7D20\u6750 ID \u5217\u8868\u4E0E\u7248\u672C\u53F7");
         }
-        sendJson(response, 200, await references2.replace(referenceSessionId(), value.assetIds, Number(value.revision)));
+        sendJson(response, 200, await references.replace(referenceSessionId(), value.assetIds, Number(value.revision)));
         return;
       }
       if (method === "POST" && requestUrl.pathname === "/api/references/clipboard") {
-        const body = await readJson(request);
+        const body = await readJson(request2);
         if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).join() !== "revision" || !Number.isInteger(body.revision)) throw new HttpError(400, "\u590D\u5236\u8BF7\u6C42\u9700\u8981\u53C2\u8003\u7BEE\u7248\u672C\u53F7");
-        const selected = await references2.resolve(referenceSessionId(), body.revision);
+        const selected = await references.resolve(referenceSessionId(), body.revision);
         await clipboardWriter(selected.files.map((file2) => file2.path).join("\n"));
         sendJson(response, 200, { status: "copied", count: selected.files.length });
         return;
       }
       if (method === "POST" && requestUrl.pathname === "/api/refresh") {
-        const body = await readJson(request);
+        const body = await readJson(request2);
         if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length !== 0) {
           throw new HttpError(400, "\u5237\u65B0\u8BF7\u6C42\u4E0D\u63A5\u53D7\u989D\u5916\u53C2\u6570");
         }
@@ -37635,7 +37699,7 @@ async function startLocalPanelServer(options) {
         return;
       }
       if (method === "POST" && requestUrl.pathname === "/api/clipboard") {
-        const body = await readJson(request);
+        const body = await readJson(request2);
         if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "\u590D\u5236\u8BF7\u6C42\u65E0\u6548");
         const entries = Object.keys(body);
         if (entries.length !== 1 || entries[0] !== "assetId") throw new HttpError(400, "\u590D\u5236\u8BF7\u6C42\u53EA\u80FD\u63D0\u4EA4\u7D20\u6750 ID");
@@ -37652,7 +37716,7 @@ async function startLocalPanelServer(options) {
         return;
       }
       if (method === "POST" && requestUrl.pathname === "/api/trash") {
-        const body = await readJson(request, 4096);
+        const body = await readJson(request2, 4096);
         const assetIds = body && typeof body === "object" && !Array.isArray(body) && Object.keys(body).join() === "assetIds" ? body.assetIds : null;
         if (!Array.isArray(assetIds) || !assetIds.length || assetIds.length > MAX_TRASH_BATCH) {
           throw new HttpError(400, `\u5220\u9664\u8BF7\u6C42\u53EA\u80FD\u63D0\u4EA4 1 \u5230 ${MAX_TRASH_BATCH} \u4E2A\u7D20\u6750 ID`);
@@ -37667,7 +37731,7 @@ async function startLocalPanelServer(options) {
           if (asset === void 0) failed.push(assetId);
           else if (asset === null) missing += 1;
           else {
-            references2.forget(assetId);
+            references.forget(assetId);
             trashed.push({ assetId, title: asset.title });
           }
         }
@@ -37730,13 +37794,304 @@ async function startLocalPanelServer(options) {
   };
 }
 
+// src/panel-daemon.ts
+function daemonPaths(inbox2 = new InboxService()) {
+  const key = createHash2("sha256").update(JSON.stringify([
+    inbox2.inboxRoot,
+    inbox2.stagingRoot,
+    process.env.PINTEREST_PANEL_STATE_DIR ?? "default"
+  ])).digest("hex").slice(0, 20);
+  const stateRoot = join3(resolve2(process.env.PINTEREST_PANEL_STATE_DIR ?? join3(homedir2(), "Library", "Application Support", "pinterest-reference-panel")), key);
+  const runtimeRoot = join3(tmpdir(), `bf-${process.getuid?.() ?? "user"}-${key}`);
+  return { stateRoot, runtimeRoot, socket: join3(runtimeRoot, "rpc.sock"), lock: join3(runtimeRoot, "owner") };
+}
+function unavailable(error62) {
+  return ["ENOENT", "ECONNREFUSED", "ECONNRESET", "EPIPE"].includes(error62.code ?? "");
+}
+function rpc(socketPath, method, args) {
+  return new Promise((resolveReply, rejectReply) => {
+    const req = request({ socketPath, path: "/rpc", method: "POST", headers: { "Content-Type": "application/json" } }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+      response.once("error", rejectReply);
+      response.once("end", () => {
+        try {
+          const reply = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+          if (reply.error) rejectReply(new ReferenceError2(reply.status ?? 500, reply.error));
+          else resolveReply(reply.result);
+        } catch (error62) {
+          rejectReply(error62);
+        }
+      });
+    });
+    req.setTimeout(12e4, () => req.destroy(new Error("BoardFlow \u540E\u53F0\u670D\u52A1\u54CD\u5E94\u8D85\u65F6")));
+    req.once("error", rejectReply);
+    const parameters = [...args];
+    while (parameters.length && parameters.at(-1) === void 0) parameters.pop();
+    req.end(JSON.stringify({ method, args: parameters }));
+  });
+}
+var PanelDaemonClient = class {
+  paths = daemonPaths();
+  starting = null;
+  connected = false;
+  async status() {
+    try {
+      const result = await rpc(this.paths.socket, "status", []);
+      this.connected = true;
+      return result;
+    } catch (error62) {
+      if (!unavailable(error62)) throw error62;
+      this.connected = false;
+      return { status: "stopped", inbox: new InboxService().getSummary(), pid: 0 };
+    }
+  }
+  async ensure() {
+    if (!this.starting) this.starting = (async () => {
+      try {
+        await rpc(this.paths.socket, "status", []);
+        return;
+      } catch (error62) {
+        if (!unavailable(error62)) throw error62;
+      }
+      mkdirSync2(this.paths.stateRoot, { recursive: true, mode: 448 });
+      const log = openSync(join3(this.paths.stateRoot, "service.log"), "a", 384);
+      let spawnError;
+      let exitCode = null;
+      try {
+        const child = spawn2(process.execPath, [fileURLToPath2(import.meta.url), "--panel-daemon"], {
+          detached: true,
+          stdio: ["ignore", log, log],
+          env: process.env
+        });
+        child.once("error", (error62) => {
+          spawnError = error62;
+        });
+        child.once("exit", (code) => {
+          exitCode = code;
+        });
+        child.unref();
+      } finally {
+        closeSync(log);
+      }
+      const deadline = Date.now() + 25e3;
+      while (Date.now() < deadline) {
+        if (spawnError) throw spawnError;
+        if (exitCode !== null && exitCode !== 0) throw new Error("BoardFlow \u540E\u53F0\u670D\u52A1\u542F\u52A8\u5931\u8D25\uFF0C\u8BF7\u67E5\u770B service.log");
+        try {
+          await rpc(this.paths.socket, "status", []);
+          return;
+        } catch (error62) {
+          if (!unavailable(error62)) throw error62;
+        }
+        await delay(100);
+      }
+      throw new Error("BoardFlow \u540E\u53F0\u670D\u52A1\u672A\u80FD\u542F\u52A8\uFF0C\u8BF7\u67E5\u770B service.log");
+    })().finally(() => {
+      this.starting = null;
+    });
+    await this.starting;
+    this.connected = true;
+  }
+  async call(method, ...args) {
+    if (!this.connected) await this.ensure();
+    try {
+      return await rpc(this.paths.socket, method, args);
+    } catch (error62) {
+      if (unavailable(error62)) this.connected = false;
+      if (!["ENOENT", "ECONNREFUSED"].includes(error62.code ?? "")) throw error62;
+      await this.ensure();
+      return rpc(this.paths.socket, method, args);
+    }
+  }
+};
+function claimService(paths) {
+  mkdirSync2(paths.runtimeRoot, { recursive: true, mode: 448 });
+  chmodSync(paths.runtimeRoot, 448);
+  const gate = join3(paths.runtimeRoot, "launching");
+  try {
+    mkdirSync2(gate, { mode: 448 });
+  } catch (error62) {
+    if (error62.code !== "EEXIST") throw error62;
+    return false;
+  }
+  try {
+    try {
+      const owner = Number(readFileSync2(join3(paths.lock, "pid"), "utf8"));
+      if (!Number.isInteger(owner) || owner <= 0) throw new Error("BoardFlow service owner is invalid");
+      try {
+        process.kill(owner, 0);
+        return false;
+      } catch (error62) {
+        if (error62.code !== "ESRCH") throw error62;
+      }
+    } catch (error62) {
+      if (error62.code !== "ENOENT") throw error62;
+    }
+    rmSync2(paths.lock, { recursive: true, force: true });
+    mkdirSync2(paths.lock, { mode: 448 });
+    writeFileSync2(join3(paths.lock, "pid"), String(process.pid), { mode: 384 });
+    return true;
+  } finally {
+    rmSync2(gate, { recursive: true, force: true });
+  }
+}
+async function runPanelDaemon() {
+  const inbox2 = new InboxService();
+  const paths = daemonPaths(inbox2);
+  if (!claimService(paths)) return;
+  const log = (message) => process.stderr.write(`[${(/* @__PURE__ */ new Date()).toISOString()}] ${message}
+`);
+  let localPanel = null;
+  let localPanelStart = null;
+  let localPanelStop = null;
+  let closePromise = null;
+  let control;
+  const close = () => closePromise ??= (async () => {
+    log("service stopping");
+    const closingControl = control?.listening ? new Promise((resolveClose, rejectClose) => {
+      const forceClose = setTimeout(() => control?.closeAllConnections(), 500);
+      forceClose.unref();
+      control.close((error62) => {
+        clearTimeout(forceClose);
+        if (error62) rejectClose(error62);
+        else resolveClose();
+      });
+      control.closeIdleConnections();
+    }) : Promise.resolve();
+    await stopPanel();
+    await inbox2.close();
+    await closingControl;
+    await rm2(paths.socket, { force: true });
+    await rm2(paths.lock, { recursive: true, force: true });
+  })();
+  const onSignal = (signal) => {
+    log(`received ${signal}`);
+    void close().then(() => process.exit(0), (error62) => {
+      log(String(error62));
+      process.exit(1);
+    });
+  };
+  process.once("SIGTERM", onSignal);
+  process.once("SIGINT", onSignal);
+  async function stopPanel() {
+    if (!localPanelStop) localPanelStop = (async () => {
+      const handle = localPanel ?? (localPanelStart ? await localPanelStart : null);
+      if (!handle) return false;
+      await handle.close();
+      if (localPanel === handle) localPanel = null;
+      log("web stopped explicitly");
+      return true;
+    })().finally(() => {
+      localPanelStop = null;
+    });
+    return localPanelStop;
+  }
+  try {
+    const references = new ReferenceSessions(inbox2, join3(paths.stateRoot, "references.json"));
+    const portPath = join3(paths.stateRoot, "web.json");
+    const stored = readState(portPath);
+    if (stored !== void 0 && (!stored || typeof stored !== "object" || !("port" in stored) || !Number.isInteger(stored.port) || Number(stored.port) < 1 || Number(stored.port) > 65535)) {
+      throw new Error("BoardFlow saved port is invalid");
+    }
+    const saved = stored;
+    let preferredPort = process.env.PINTEREST_PANEL_PORT === void 0 ? saved?.port ?? 0 : Number(process.env.PINTEREST_PANEL_PORT);
+    async function ensurePanel() {
+      if (localPanelStop) await localPanelStop;
+      if (localPanel) return localPanel;
+      if (!localPanelStart) localPanelStart = (async () => {
+        const handle = await startLocalPanelServer({ inbox: inbox2, references, port: preferredPort });
+        try {
+          writeState(portPath, { version: 1, port: handle.port, enabled: true });
+        } catch (error62) {
+          await handle.close();
+          throw error62;
+        }
+        preferredPort = handle.port;
+        localPanel = handle;
+        log(`web listening on ${handle.url}`);
+        return handle;
+      })().finally(() => {
+        localPanelStart = null;
+      });
+      return localPanelStart;
+    }
+    const status = () => ({
+      status: localPanelStop ? "stopping" : localPanel ? "running" : "stopped",
+      ...localPanel ? { host: localPanel.host, port: localPanel.port, url: localPanel.url } : {},
+      inbox: inbox2.getSummary(),
+      pid: process.pid
+    });
+    const handlers = {
+      status,
+      summary: () => inbox2.getSummary(),
+      page: (options) => inbox2.getPage(options),
+      asset: (id) => inbox2.resolveAsset(id),
+      selection: (id, revision) => references.resolve(id, revision),
+      open: async (id) => {
+        if (id) references.require(id);
+        const handle = await ensurePanel();
+        const referenceSessionId = id ?? references.create();
+        return { ...status(), host: handle.host, port: handle.port, url: `${handle.url}?ref=${referenceSessionId}`, referenceSessionId };
+      },
+      stop: async () => {
+        const wasRunning = await stopPanel();
+        if (preferredPort) writeState(portPath, { version: 1, port: preferredPort, enabled: false });
+        return { status: "stopped", wasRunning, inbox: inbox2.getSummary() };
+      },
+      shutdown: () => {
+        setTimeout(() => onSignal("RPC shutdown"), 50);
+        return { status: "stopping" };
+      }
+    };
+    await inbox2.start();
+    if (saved?.port && saved.enabled !== false) await ensurePanel();
+    await rm2(paths.socket, { force: true });
+    control = createServer2((req, res) => {
+      void (async () => {
+        if (req.method !== "POST" || req.url !== "/rpc") throw new Error("invalid RPC request");
+        const chunks = [];
+        let size = 0;
+        for await (const chunk of req) {
+          size += chunk.length;
+          if (size > 64e3) throw new Error("RPC request too large");
+          chunks.push(chunk);
+        }
+        const { method, args } = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        if (!Object.hasOwn(handlers, method) || !Array.isArray(args)) throw new Error("invalid RPC method");
+        const handler = handlers[method];
+        return handler(...args);
+      })().then((result) => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ result }));
+      }, (error62) => {
+        log(`RPC failed: ${error62 instanceof Error ? error62.message : String(error62)}`);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: error62 instanceof ReferenceError2 ? error62.message : "BoardFlow \u540E\u53F0\u670D\u52A1\u6682\u65F6\u65E0\u6CD5\u5B8C\u6210\u8BF7\u6C42", status: error62 instanceof ReferenceError2 ? error62.status : 500 }));
+      });
+    });
+    await new Promise((resolveListen, rejectListen) => {
+      control.once("error", rejectListen);
+      control.listen(paths.socket, () => {
+        control.off("error", rejectListen);
+        resolveListen();
+      });
+    });
+    chmodSync(paths.socket, 384);
+    log(`service ready pid=${process.pid}`);
+  } catch (error62) {
+    await close();
+    throw error62;
+  }
+}
+
 // src/workspace.ts
-import { createHash as createHash2, randomBytes as randomBytes3 } from "node:crypto";
+import { createHash as createHash3, randomBytes as randomBytes4 } from "node:crypto";
 import { execFile as execFile2 } from "node:child_process";
 import { constants as constants3, existsSync as existsSync3 } from "node:fs";
-import { access, copyFile as copyFile2, lstat as lstat2, mkdir as mkdir2, readFile as readFile3, realpath as realpath2, rename as rename2, rm as rm2, stat as stat3 } from "node:fs/promises";
-import { homedir as homedir2 } from "node:os";
-import { basename as basename2, dirname as dirname3, extname as extname2, join as join3, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
+import { access, copyFile as copyFile2, lstat as lstat2, mkdir as mkdir2, readFile as readFile3, realpath as realpath2, rename as rename2, rm as rm3, stat as stat3 } from "node:fs/promises";
+import { homedir as homedir3 } from "node:os";
+import { basename as basename2, dirname as dirname4, extname as extname2, join as join4, relative as relative2, resolve as resolve3, sep as sep2 } from "node:path";
 import { promisify as promisify2 } from "node:util";
 var execFileAsync2 = promisify2(execFile2);
 var REFERENCE_MAX_EDGE = 2048;
@@ -37750,7 +38105,7 @@ function safeSegment(value) {
   return cleaned || "reference";
 }
 async function fileHash(path) {
-  return createHash2("sha256").update(await readFile3(path)).digest("hex");
+  return createHash3("sha256").update(await readFile3(path)).digest("hex");
 }
 function parseSipsProperties(stdout) {
   const property = (name) => stdout.match(new RegExp(`^\\s*${name}:\\s*(.+)\\s*$`, "mi"))?.[1]?.trim() ?? null;
@@ -37765,17 +38120,17 @@ var WorkspaceRegistry = class {
   imageProcessorPath;
   platform;
   constructor(options = {}) {
-    this.derivativeCacheRoot = resolve2(options.derivativeCacheRoot ?? join3(homedir2(), "Library", "Caches", "pinterest-reference-panel", "references"));
+    this.derivativeCacheRoot = resolve3(options.derivativeCacheRoot ?? join4(homedir3(), "Library", "Caches", "pinterest-reference-panel", "references"));
     this.imageProcessorPath = options.imageProcessorPath ?? "/usr/bin/sips";
     this.platform = options.platform ?? process.platform;
   }
   async register(candidate) {
     if (!candidate) return { available: false, name: null, token: null, reason: "Codex \u672A\u63D0\u4F9B\u5F53\u524D\u5DE5\u4F5C\u533A\u8DEF\u5F84" };
     try {
-      const canonicalPath = await realpath2(resolve2(candidate));
+      const canonicalPath = await realpath2(resolve3(candidate));
       if (!(await stat3(canonicalPath)).isDirectory()) throw new Error("\u5DE5\u4F5C\u533A\u4E0D\u662F\u76EE\u5F55");
       await access(canonicalPath, constants3.R_OK | constants3.W_OK);
-      const token = randomBytes3(24).toString("base64url");
+      const token = randomBytes4(24).toString("base64url");
       this.roots.set(token, canonicalPath);
       return { available: true, name: basename2(canonicalPath), token, reason: null };
     } catch (error62) {
@@ -37786,7 +38141,7 @@ var WorkspaceRegistry = class {
     const workspaceRoot = this.roots.get(token);
     if (!workspaceRoot) throw new Error("\u5DE5\u4F5C\u533A\u4EE4\u724C\u65E0\u6548\u6216\u5DF2\u8FC7\u671F");
     const canonicalRoot = await realpath2(workspaceRoot);
-    const destinationDirectory = join3(canonicalRoot, "references", "pinterest", safeSegment(asset.boardId));
+    const destinationDirectory = join4(canonicalRoot, "references", "pinterest", safeSegment(asset.boardId));
     await mkdir2(destinationDirectory, { recursive: true });
     const canonicalDestinationDirectory = await realpath2(destinationDirectory);
     if (!isWithin2(canonicalRoot, canonicalDestinationDirectory)) throw new Error("\u5DE5\u4F5C\u533A\u5B50\u76EE\u5F55\u6307\u5411\u4E86\u6839\u76EE\u5F55\u4E4B\u5916");
@@ -37794,17 +38149,17 @@ var WorkspaceRegistry = class {
     const extension = prepared.extension;
     const stem = safeSegment(basename2(asset.sourcePath, extname2(asset.sourcePath)));
     const sourceDigest = await fileHash(prepared.path);
-    let destinationPath = join3(canonicalDestinationDirectory, `${stem}${extension}`);
+    let destinationPath = join4(canonicalDestinationDirectory, `${stem}${extension}`);
     try {
       if (await fileHash(destinationPath) === sourceDigest) return this.result(canonicalRoot, destinationPath, true, prepared);
-      destinationPath = join3(canonicalDestinationDirectory, `${stem}-${sourceDigest.slice(0, 8)}${extension}`);
+      destinationPath = join4(canonicalDestinationDirectory, `${stem}-${sourceDigest.slice(0, 8)}${extension}`);
       try {
         if (await fileHash(destinationPath) === sourceDigest) return this.result(canonicalRoot, destinationPath, true, prepared);
       } catch {
       }
     } catch {
     }
-    if (!isWithin2(canonicalRoot, await realpath2(dirname3(destinationPath)))) throw new Error("\u76EE\u6807\u8DEF\u5F84\u8D8A\u8FC7\u4E86\u5DE5\u4F5C\u533A\u8FB9\u754C");
+    if (!isWithin2(canonicalRoot, await realpath2(dirname4(destinationPath)))) throw new Error("\u76EE\u6807\u8DEF\u5F84\u8D8A\u8FC7\u4E86\u5DE5\u4F5C\u533A\u8FB9\u754C");
     await copyFile2(prepared.path, destinationPath, constants3.COPYFILE_EXCL);
     return this.result(canonicalRoot, destinationPath, false, prepared);
   }
@@ -37836,7 +38191,7 @@ var WorkspaceRegistry = class {
       const digest = await fileHash(asset.sourcePath);
       await mkdir2(this.derivativeCacheRoot, { recursive: true });
       const canonicalCacheRoot = await realpath2(this.derivativeCacheRoot);
-      const cachePath = join3(canonicalCacheRoot, `${digest.slice(0, 32)}-${recipe}${targetExtension}`);
+      const cachePath = join4(canonicalCacheRoot, `${digest.slice(0, 32)}-${recipe}${targetExtension}`);
       if (existsSync3(cachePath)) {
         const cachedStat = await lstat2(cachePath);
         if (!cachedStat.isFile() || cachedStat.isSymbolicLink() || cachedStat.size < 1) throw new Error("\u5F15\u7528\u7F13\u5B58\u4E0D\u662F\u5B89\u5168\u7684\u666E\u901A\u6587\u4EF6");
@@ -37851,7 +38206,7 @@ var WorkspaceRegistry = class {
       const generatedStat = await stat3(temporaryPath);
       if (generatedStat.size < 1) throw new Error("\u751F\u6210\u7684\u5F15\u7528\u56FE\u7247\u4E3A\u7A7A");
       if (generatedStat.size >= sourceStat.size) {
-        await rm2(temporaryPath, { force: true });
+        await rm3(temporaryPath, { force: true });
         temporaryPath = null;
         return { path: asset.sourcePath, extension: sourceExtension, optimization: "source-lightweight", cacheReused: false, reason: null };
       }
@@ -37861,7 +38216,7 @@ var WorkspaceRegistry = class {
     } catch (error62) {
       return fallback(error62 instanceof Error ? `\u5F15\u7528\u7248\u751F\u6210\u5931\u8D25\uFF1A${error62.message}` : "\u5F15\u7528\u7248\u751F\u6210\u5931\u8D25");
     } finally {
-      if (temporaryPath) await rm2(temporaryPath, { force: true });
+      if (temporaryPath) await rm3(temporaryPath, { force: true });
     }
   }
   result(workspaceRoot, destinationPath, reused, prepared) {
@@ -37878,52 +38233,21 @@ var WorkspaceRegistry = class {
 
 // src/server.ts
 var PANEL_URI = "ui://pinterest-reference-panel/panel.html";
-var moduleDirectory = dirname4(fileURLToPath2(import.meta.url));
-var panelHtml = readFileSync(join4(moduleDirectory, "../assets/pinterest-panel.html"), "utf8");
+var moduleDirectory = dirname5(fileURLToPath3(import.meta.url));
+var panelHtml = readFileSync3(join5(moduleDirectory, "../assets/pinterest-panel.html"), "utf8");
 var inbox = new InboxService();
 var workspaces = new WorkspaceRegistry();
-var references = new ReferenceSessions(inbox);
-var localPanel = null;
-var localPanelStart = null;
-var localPanelStop = null;
-async function ensureLocalPanel() {
-  if (localPanelStop) await localPanelStop;
-  if (localPanel) return localPanel;
-  if (!localPanelStart) {
-    const configuredPort = process.env.PINTEREST_PANEL_PORT ? Number(process.env.PINTEREST_PANEL_PORT) : 0;
-    localPanelStart = startLocalPanelServer({ inbox, references, port: configuredPort }).then((handle) => {
-      localPanel = handle;
-      return handle;
-    }).finally(() => {
-      localPanelStart = null;
-    });
-  }
-  return localPanelStart;
-}
-async function stopLocalPanel() {
-  if (!localPanelStop) {
-    localPanelStop = (async () => {
-      const handle = localPanel ?? (localPanelStart ? await localPanelStart : null);
-      if (!handle) return false;
-      await handle.close();
-      if (localPanel === handle) localPanel = null;
-      return true;
-    })().finally(() => {
-      localPanelStop = null;
-    });
-  }
-  return localPanelStop;
-}
+var daemon = new PanelDaemonClient();
 function reportInternalError(context, error62) {
   const detail = error62 instanceof Error ? error62.stack ?? error62.message : String(error62);
   process.stderr.write(`[pinterest-reference-panel] ${context}: ${detail}
 `);
 }
 var server = new McpServer(
-  { name: "pinterest-reference-panel", version: "0.5.0" },
+  { name: "pinterest-reference-panel", version: "0.5.1" },
   {
     capabilities: { resources: {}, tools: {} },
-    instructions: "When Pinterest BoardFlow (formerly Pinterest Inbox) is selected or mentioned, an unqualified request to open it (including \u6253\u5F00\u9879\u76EE) means launch its running Board-style masonry material panel, unless the user explicitly asks for source code, documentation or project management. Call open_pinterest_inbox_web, then actually open the complete returned URL in the host's visible browser for THIS task: in Codex call open_in_codex with target {type: 'browser', url} and placement 'right'; in the Claude desktop app call the built-in browser preview_start with that url; without an in-app browser run `open '<url>'`. Discover deferred tools when needed. Opening README or locating a repository does not fulfill this request. Do not use desktop automation on the host app or start a second InboxService as a workaround. Report opened only after the browser action succeeds; distinguish queued from displayed. Retain the returned referenceSessionId for THIS task. When the user asks to use selected references, call get_pinterest_reference_selection with that exact ID, then read the returned original local image files before visual analysis or generation. Use numbered files in returned order. Never guess a session or read another task's basket. To reopen the same basket pass its referenceSessionId; omitting it creates an empty independent basket. Recheck the returned revision before using references if the user changes selection. Selecting images never sends a message. Do not copy, re-encode or modify originals. Path copying remains an explicit fallback. Never accept arbitrary source URLs or paths."
+    instructions: "When Pinterest BoardFlow (formerly Pinterest Inbox) is selected or mentioned, an unqualified request to open it (including \u6253\u5F00\u9879\u76EE) means launch its running Board-style masonry material panel, unless the user explicitly asks for source code, documentation or project management. Call open_pinterest_inbox_web, then actually open the complete returned URL in the host's visible browser for THIS task: in Codex call open_in_codex with target {type: 'browser', url} and placement 'right'; in the Claude desktop app call the built-in browser preview_start with that url; without an in-app browser run `open '<url>'`. Discover deferred tools when needed. Opening README or locating a repository does not fulfill this request. Do not use desktop automation on the host app or start a second InboxService as a workaround. Report opened only after the browser action succeeds; distinguish queued from displayed. The web service survives MCP disconnects and reference baskets persist across restarts. Retain the returned referenceSessionId for THIS task. When the user asks to use selected references, call get_pinterest_reference_selection with that exact ID, then read the returned original local image files before visual analysis or generation. Use numbered files in returned order. Never guess a session or read another task's basket. To reopen the same basket pass its referenceSessionId; omitting it creates an empty independent basket. Recheck the returned revision before using references if the user changes selection. Selecting images never sends a message. Do not copy, re-encode or modify originals. Path copying remains an explicit fallback. Never accept arbitrary source URLs or paths."
   }
 );
 async function workspaceCandidate(explicitRoot) {
@@ -37933,7 +38257,7 @@ async function workspaceCandidate(explicitRoot) {
       const result = await server.server.listRoots();
       const fileRoots = result.roots.map((root) => {
         try {
-          return root.uri.startsWith("file:") ? fileURLToPath2(root.uri) : null;
+          return root.uri.startsWith("file:") ? fileURLToPath3(root.uri) : null;
         } catch {
           return null;
         }
@@ -37947,7 +38271,7 @@ async function workspaceCandidate(explicitRoot) {
 }
 async function panelResult(options) {
   if (!options.forceRescan && options.knownVersion !== void 0) {
-    const summary = inbox.getSummary();
+    const summary = await daemon.call("summary");
     if (summary.version === options.knownVersion) {
       return {
         structuredContent: { mode: "inbox", unchanged: true, ...summary },
@@ -37956,7 +38280,7 @@ async function panelResult(options) {
       };
     }
   }
-  const pageResult = await inbox.getPage({
+  const pageResult = await daemon.call("page", {
     ...options.cursor ? { cursor: options.cursor } : {},
     ...options.limit ? { limit: options.limit } : {},
     ...options.forceRescan !== void 0 ? { forceRescan: options.forceRescan } : {}
@@ -38025,18 +38349,17 @@ server.registerTool(
   },
   async ({ referenceSessionId }) => {
     try {
-      const handle = await ensureLocalPanel();
-      const id = referenceSessionId ? references.require(referenceSessionId).id : references.create();
-      const url2 = `${handle.url}?ref=${id}`;
+      const opened = await daemon.call("open", referenceSessionId);
+      const { url: url2, referenceSessionId: id } = opened;
       return {
-        structuredContent: { status: "running", url: url2, referenceSessionId: id, host: handle.host, port: handle.port, inbox: inbox.getSummary() },
+        structuredContent: opened,
         content: [{ type: "text", text: `Pinterest BoardFlow \u670D\u52A1\u5DF2\u5C31\u7EEA\uFF1A${url2}\u3002\u4E0B\u4E00\u6B65\u5FC5\u987B\u7528\u5BBF\u4E3B\u7684\u53EF\u89C1\u6D4F\u89C8\u5668\u6253\u5F00\u8BE5 URL\uFF1ACodex \u8C03\u7528 open_in_codex\uFF0Ctarget={type:"browser",url:"${url2}"}\uFF0Cplacement="right"\uFF1BClaude \u684C\u9762\u7248\u8C03\u7528\u5185\u7F6E\u6D4F\u89C8\u5668 preview_start\uFF0Curl="${url2}"\uFF1B\u6CA1\u6709\u5185\u5D4C\u6D4F\u89C8\u5668\u65F6\u6267\u884C open "${url2}"\u3002\u670D\u52A1\u5C31\u7EEA\u4E0D\u7B49\u4E8E\u770B\u677F\u5DF2\u663E\u793A\uFF0C\u8BF7\u6839\u636E\u6D4F\u89C8\u5668\u5DE5\u5177\u7ED3\u679C\u62A5\u544A\u5DF2\u6253\u5F00\u6216\u5DF2\u6392\u961F\u3002\u4FDD\u7559\u672C\u4EFB\u52A1\u7684\u53C2\u8003\u4F1A\u8BDD ${id}\u3002\u7528\u6237\u9009\u56FE\u540E\uFF0C\u901A\u8FC7 get_pinterest_reference_selection \u8BFB\u53D6\u8BE5\u4F1A\u8BDD\uFF0C\u518D\u8BFB\u53D6\u539F\u56FE\u3002` }]
       };
     } catch (error62) {
       reportInternalError("local panel start failed", error62);
       return {
         isError: true,
-        content: [{ type: "text", text: error62 instanceof ReferenceError2 ? error62.message : "\u65E0\u6CD5\u542F\u52A8 Pinterest BoardFlow \u672C\u5730\u7F51\u9875\uFF1B\u8BF7\u68C0\u67E5\u63D2\u4EF6\u5B89\u88C5\u540E\u91CD\u8BD5\u3002" }]
+        content: [{ type: "text", text: error62 instanceof ReferenceError2 && error62.status < 500 ? error62.message : "\u65E0\u6CD5\u542F\u52A8 Pinterest BoardFlow \u672C\u5730\u7F51\u9875\uFF1B\u8BF7\u68C0\u67E5\u63D2\u4EF6\u5B89\u88C5\u540E\u91CD\u8BD5\u3002" }]
       };
     }
   }
@@ -38054,7 +38377,7 @@ server.registerTool(
   },
   async ({ referenceSessionId, expectedRevision }) => {
     try {
-      const selected = await references.resolve(referenceSessionId, expectedRevision);
+      const selected = await daemon.call("selection", referenceSessionId, expectedRevision);
       return {
         structuredContent: selected,
         content: [{ type: "text", text: `\u5DF2\u786E\u8BA4 ${selected.files.length} \u5F20\u53C2\u8003\u56FE\uFF08\u7248\u672C ${selected.revision}\uFF09\u3002\u8BF7\u6309\u987A\u5E8F\u8BFB\u53D6\u539F\u56FE\uFF1A
@@ -38075,17 +38398,10 @@ server.registerTool(
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   },
   async () => {
-    const status = localPanelStop ? "stopping" : localPanel ? "running" : "stopped";
+    const result = await daemon.status();
     return {
-      structuredContent: {
-        status,
-        ...localPanel ? { url: localPanel.url, host: localPanel.host, port: localPanel.port } : {},
-        inbox: inbox.getSummary()
-      },
-      content: [{
-        type: "text",
-        text: status === "stopping" ? "Pinterest BoardFlow \u672C\u5730\u7F51\u9875\u6B63\u5728\u505C\u6B62\u3002" : localPanel ? `Pinterest BoardFlow \u672C\u5730\u7F51\u9875\u6B63\u5728\u8FD0\u884C\uFF1A${localPanel.url}` : "Pinterest BoardFlow \u672C\u5730\u7F51\u9875\u5F53\u524D\u672A\u542F\u52A8\u3002"
-      }]
+      structuredContent: result,
+      content: [{ type: "text", text: result.status === "running" ? `Pinterest BoardFlow \u672C\u5730\u7F51\u9875\u6B63\u5728\u8FD0\u884C\uFF1A${result.url}` : result.status === "stopping" ? "Pinterest BoardFlow \u672C\u5730\u7F51\u9875\u6B63\u5728\u505C\u6B62\u3002" : "Pinterest BoardFlow \u672C\u5730\u7F51\u9875\u5F53\u524D\u672A\u542F\u52A8\u3002" }]
     };
   }
 );
@@ -38093,7 +38409,7 @@ server.registerTool(
   "stop_pinterest_inbox_web",
   {
     title: "\u505C\u6B62 Pinterest BoardFlow \u672C\u5730\u7F51\u9875",
-    description: "\u505C\u6B62\u5F53\u524D\u4EFB\u52A1\u7684\u672C\u5730\u7F51\u9875\u670D\u52A1\uFF1BInbox \u76D1\u542C\u548C\u65E7 MCP \u9762\u677F\u4FDD\u6301\u53EF\u7528\u3002",
+    description: "\u505C\u6B62\u5171\u4EAB\u672C\u5730\u7F51\u9875\u670D\u52A1\uFF08\u6240\u6709\u5DF2\u6253\u5F00\u7684\u770B\u677F\u90FD\u4F1A\u6682\u65F6\u65AD\u5F00\uFF09\uFF1B\u53C2\u8003\u7BEE\u548C Inbox \u76D1\u542C\u4FDD\u7559\u3002",
     inputSchema: {},
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     _meta: {
@@ -38103,9 +38419,10 @@ server.registerTool(
   },
   async () => {
     try {
-      const stopped = await stopLocalPanel();
+      const result = await daemon.call("stop");
+      const stopped = result.wasRunning;
       return {
-        structuredContent: { status: "stopped", wasRunning: stopped, inbox: inbox.getSummary() },
+        structuredContent: result,
         content: [{ type: "text", text: stopped ? "Pinterest BoardFlow \u672C\u5730\u7F51\u9875\u5DF2\u505C\u6B62\uFF1BInbox \u76D1\u542C\u4ECD\u5728\u8FD0\u884C\u3002" : "Pinterest BoardFlow \u672C\u5730\u7F51\u9875\u539F\u672C\u5C31\u672A\u542F\u52A8\u3002" }]
       };
     } catch (error62) {
@@ -38143,7 +38460,7 @@ server.registerTool(
     }
   },
   async ({ assetId, workspaceToken }) => {
-    const asset = await inbox.resolveAsset(assetId);
+    const asset = await daemon.call("asset", assetId);
     if (!asset) return { isError: true, content: [{ type: "text", text: "\u672A\u627E\u5230\u8BE5 Inbox \u56FE\u7247\uFF0C\u8BF7\u5237\u65B0\u540E\u91CD\u8BD5\u3002" }] };
     try {
       const imported = await workspaces.importAsset(asset, workspaceToken);
@@ -38158,7 +38475,6 @@ server.registerTool(
   }
 );
 async function startServer() {
-  await inbox.start();
   const transport = new StdioServerTransport();
   const requestShutdown = () => {
     void shutdown().catch((error62) => {
@@ -38177,24 +38493,13 @@ async function startServer() {
   } catch (error62) {
     process.stdin.off("end", requestShutdown);
     process.stdin.off("close", requestShutdown);
-    await inbox.close();
     throw error62;
   }
 }
 var shutdownPromise = null;
 async function shutdown() {
   if (!shutdownPromise) {
-    shutdownPromise = (async () => {
-      try {
-        await stopLocalPanel();
-      } finally {
-        try {
-          await inbox.close();
-        } finally {
-          await server.close();
-        }
-      }
-    })();
+    shutdownPromise = Promise.resolve().then(() => server.close());
   }
   return shutdownPromise;
 }
@@ -38208,10 +38513,12 @@ function shutdownFromSignal() {
     }
   );
 }
-process.once("SIGINT", shutdownFromSignal);
-process.once("SIGTERM", shutdownFromSignal);
-if (process.argv[1] && fileURLToPath2(import.meta.url) === process.argv[1]) {
-  startServer().catch((error62) => {
+if (!process.argv.includes("--panel-daemon")) {
+  process.once("SIGINT", shutdownFromSignal);
+  process.once("SIGTERM", shutdownFromSignal);
+}
+if (process.argv[1] && fileURLToPath3(import.meta.url) === process.argv[1]) {
+  (process.argv.includes("--panel-daemon") ? runPanelDaemon() : startServer()).catch((error62) => {
     process.stderr.write(`[pinterest-reference-panel] ${error62 instanceof Error ? error62.stack ?? error62.message : String(error62)}
 `);
     process.exitCode = 1;
@@ -38219,13 +38526,15 @@ if (process.argv[1] && fileURLToPath2(import.meta.url) === process.argv[1]) {
 }
 export {
   InboxService,
+  PanelDaemonClient,
   ReferenceError2 as ReferenceError,
   ReferenceSessions,
   WorkspaceRegistry,
+  daemon,
+  daemonPaths,
   inbox,
   parseImageDimensions,
   parseInboxFilename,
-  references,
   server,
   startLocalPanelServer,
   startServer,

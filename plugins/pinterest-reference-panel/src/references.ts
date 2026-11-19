@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { InboxService, type InboxAsset, type PublicInboxAsset } from "./inbox.js";
+import { z } from "zod";
+import { readState, writeState } from "./persistent-state.js";
 
 export const MAX_REFERENCES = 10;
 export const REFERENCE_SESSION_PATTERN = /^[a-f0-9]{32}$/;
@@ -11,6 +13,15 @@ export class ReferenceError extends Error {
 
 type Entry = { asset: PublicInboxAsset; fingerprint: string };
 type Session = { id: string; revision: number; entries: Entry[] };
+
+const storedSessions = z.object({ version: z.literal(1), sessions: z.array(z.object({
+  id: z.string().regex(REFERENCE_SESSION_PATTERN), revision: z.number().int().nonnegative(),
+  entries: z.array(z.object({ fingerprint: z.string(), asset: z.object({
+    id: z.string().regex(/^[a-f0-9]{24}$/), pinId: z.string(), boardId: z.string(),
+    boardTitle: z.string(), title: z.string(), extension: z.string(), size: z.number().nonnegative(),
+    updatedAt: z.string(), width: z.number().nullable(), height: z.number().nullable()
+  }) })).max(MAX_REFERENCES)
+})) });
 
 function publicAsset(asset: InboxAsset): PublicInboxAsset {
   const { sourcePath: _path, sourceRelativePath: _relative, signature: _signature, ...value } = asset;
@@ -29,12 +40,27 @@ async function fingerprint(path: string, indexed?: InboxAsset) {
 // carry the session returned when their own task opened the panel.
 export class ReferenceSessions {
   private sessions = new Map<string, Session>();
-  constructor(private readonly inbox: InboxService) {}
+  constructor(private readonly inbox: InboxService, private readonly statePath?: string) {
+    const stored = statePath ? readState(statePath) : undefined;
+    if (stored !== undefined) {
+      for (const session of storedSessions.parse(stored).sessions) this.sessions.set(session.id, session);
+    }
+  }
+
+  private save(updates: Session[]) {
+    const next = new Map(this.sessions);
+    for (const session of updates) next.set(session.id, session);
+    if (this.statePath) writeState(this.statePath, { version: 1, sessions: [...next.values()] });
+    // Keep existing objects alive for in-flight optimistic revision checks.
+    for (const session of updates) {
+      const current = this.sessions.get(session.id);
+      if (current) Object.assign(current, session); else this.sessions.set(session.id, session);
+    }
+  }
 
   create() {
-    if (this.sessions.size >= 64) throw new ReferenceError(409, "参考会话已达上限，请重启插件后重新选择图片");
     const session: Session = { id: randomBytes(16).toString("hex"), revision: 0, entries: [] };
-    this.sessions.set(session.id, session);
+    this.save([session]);
     return session.id;
   }
 
@@ -46,12 +72,13 @@ export class ReferenceSessions {
 
   // Drops a removed asset from every basket so no task keeps a dead reference.
   forget(assetId: string) {
+    const updates: Session[] = [];
     for (const session of this.sessions.values()) {
       const entries = session.entries.filter(entry => entry.asset.id !== assetId);
       if (entries.length === session.entries.length) continue;
-      session.entries = entries;
-      session.revision += 1;
+      updates.push({ ...session, entries, revision: session.revision + 1 });
     }
+    if (updates.length) this.save(updates);
   }
 
   async describe(id: string) {
@@ -88,8 +115,7 @@ export class ReferenceSessions {
     }));
     if (session.revision !== expectedRevision) throw new ReferenceError(409, "参考篮已在其他页面更新，请查看最新选择后重试");
     if (session.entries.map(entry => entry.asset.id).join() !== assetIds.join()) {
-      session.entries = entries;
-      session.revision += 1;
+      this.save([{ ...session, entries, revision: session.revision + 1 }]);
     }
     return this.describe(id);
   }

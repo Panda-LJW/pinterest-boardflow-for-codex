@@ -6,7 +6,7 @@
 
 Chrome 下载器 · 本地瀑布流素材库 · Codex / Claude Code 插件
 
-![版本 0.5.0](https://img.shields.io/badge/版本-0.5.0-e60023) ![macOS](https://img.shields.io/badge/macOS-Chrome%20116%2B-111111) ![Codex · Claude Code](https://img.shields.io/badge/Codex%20·%20Claude%20Code-插件-6b6b6b) ![MIT](https://img.shields.io/badge/license-MIT-6b6b6b)
+![版本 0.5.1](https://img.shields.io/badge/版本-0.5.1-e60023) ![macOS](https://img.shields.io/badge/macOS-Chrome%20116%2B-111111) ![Codex · Claude Code](https://img.shields.io/badge/Codex%20·%20Claude%20Code-插件-6b6b6b) ![MIT](https://img.shields.io/badge/license-MIT-6b6b6b)
 
 [快速开始](#install) · [怎么用](#workflow) · [快捷键](#shortcuts) · [常见问题](#faq)
 
@@ -145,6 +145,7 @@ codex plugin add pinterest-reference-panel@personal
 | `~/Downloads/PinterestInbox/` | Chrome 的临时下载区 |
 | `~/Pictures/PinterestInbox/` | 长期素材库，按图版分文件夹 |
 | `~/Library/Caches/pinterest-reference-panel/` | 缩略图缓存，可以随时清理 |
+| `~/Library/Application Support/pinterest-reference-panel/` | 参考篮、固定端口记录与服务日志 |
 
 插件会把临时区的文件校验后移进长期库。同名同内容自动去重，同名不同内容另存一份，不会覆盖旧图。文件名是“标题__pin-编号”，在访达里也好找。浏览、选图、复制路径都不会改动原图。
 
@@ -169,6 +170,16 @@ codex plugin add pinterest-reference-panel@personal
 <br>
 
 Codex 会尽量在右侧内嵌浏览器打开；如果只是排队没显示，让助手在可见浏览器里打开它返回的本地地址即可。Claude Code 桌面版的内置浏览器打不开本机地址时，会改用系统浏览器。选完图回到原对话继续说就行。
+
+</details>
+
+<details>
+<summary><strong>插件断开后，看板还能继续用吗？</strong></summary>
+<br>
+
+从 0.5.1 起，看板由独立后台进程运行。同一素材库的多个对话共用一个服务，插件连接关闭不会关闭网页。参考篮及其顺序、版本会保存到本机，重连时传回原来的会话 ID 即可继续；后台进程重启后沿用保存的端口，页面会重新认证。
+
+服务被系统结束或电脑重启后，需要再次调用插件来启动后台服务；这不是开机自启服务。已保存端口被其他程序占用时会报告启动失败，不会悄悄改成新地址。停止网页工具会影响全部打开的看板，但保留参考篮。升级前已经丢失的内存参考篮无法恢复，第一次升级需重新打开看板。
 
 </details>
 
@@ -209,6 +220,7 @@ npm test        # 构建插件，并运行插件与下载器的全部测试
 <br>
 
 - `PINTEREST_INBOX_DIR` 覆盖长期素材库位置，`PINTEREST_INBOX_STAGING_DIR` 覆盖临时下载区。
+- `PINTEREST_PANEL_STATE_DIR` 覆盖状态存储根目录（内部按素材库隔离）；`PINTEREST_PANEL_PORT` 可指定端口。服务日志为对应状态目录中的 `service.log`。
 - `open_pinterest_inbox_web` 打开看板并创建参考篮；`get_pinterest_reference_selection` 按同一个 `referenceSessionId` 返回有序的本地文件路径。
 - 修改代码后要让 Codex 用上新版，需更新 `plugins/pinterest-reference-panel/.codex-plugin/plugin.json` 里的 `version`，再重启 Codex。
 

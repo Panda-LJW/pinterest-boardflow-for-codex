@@ -7,7 +7,7 @@ const pluginRoot = new URL("../", import.meta.url);
 test("manifest exposes the local MCP server and its narrow read/write scope", async () => {
   const manifest = JSON.parse(await readFile(new URL(".codex-plugin/plugin.json", pluginRoot), "utf8"));
   assert.equal(manifest.name, "pinterest-reference-panel");
-  assert.match(manifest.version, /^0\.5\.0\+codex\./);
+  assert.match(manifest.version, /^0\.5\.1\+codex\./);
   assert.equal(manifest.interface.displayName, "Pinterest BoardFlow");
   assert.equal(manifest.mcpServers, "./.mcp.json");
   assert.deepEqual(manifest.interface.capabilities, ["Interactive", "Read", "Write"]);
@@ -23,7 +23,7 @@ test("MCP launch command points to the built local server", async () => {
 });
 
 test("local panel lifecycle retains a failed handle and serializes stop before reopen", async () => {
-  const source = await readFile(new URL("src/server.ts", pluginRoot), "utf8");
+  const source = await readFile(new URL("src/panel-daemon.ts", pluginRoot), "utf8");
   assert.match(source, /if \(localPanelStop\) await localPanelStop;\s*if \(localPanel\) return localPanel;/);
   assert.match(
     source,

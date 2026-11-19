@@ -8,9 +8,9 @@
 Pinterest 图版
   → Chrome 扩展（单张 / 多选 / 整板自动滚动）
   → ~/Downloads/PinterestInbox/<board>/（临时区）
-  → MCP 启动收取 + 运行期双目录监听
+  → 独立后台服务收取 + 运行期双目录监听
   → ~/Pictures/PinterestInbox/<board>/（长期库）
-  → 127.0.0.1 动态端口的 Pins / Boards 本地网页
+  → 127.0.0.1 持久化端口的 Pins / Boards 本地网页
   → Codex 内嵌浏览器右侧打开
   → 全库搜索 / 原图预览 / 当前任务参考篮（有序 1–10 张）
   → 用户在原任务描述需求，MCP 按 referenceSessionId 返回原文件
@@ -26,8 +26,8 @@ Pinterest 图版
 4. Chrome 临时下载区默认为 `~/Downloads/PinterestInbox`，长期素材库默认为 `~/Pictures/PinterestInbox`；分别可用 `PINTEREST_INBOX_STAGING_DIR` 和 `PINTEREST_INBOX_DIR` 覆盖。Chrome Downloads API 只能设置 Downloads 下的相对路径。
 5. 本地网页与 MCP 均不接受任意 URL、源文件路径或目标路径。网页素材操作只提交匹配固定格式的已索引 `assetId` 或有序 ID 列表；服务端必须再次通过 `resolveAsset()` 确认真实文件仍位于长期库后，才能预览、选择或复制路径。
 6. 本地网页不得把 `sourcePath` 返回给浏览器、不得自动发送消息、不得生成工作区副本或引用衍生件。旧 MCP 工作区导入链路仅作为可回滚备用，仍受 `workspaceToken`、固定目标目录和符号链接边界保护。
-7. 不引入数据库、常驻系统服务、LaunchAgent、Native Messaging 或新的生产 npm 依赖。
-8. HTTP 网页与 MCP 必须在同一进程共享唯一 `InboxService`，不得创建第二套 watcher、周期校准或 Downloads 搬运进程。
+7. 不引入数据库、LaunchAgent、Native Messaging 或新的生产 npm 依赖。按需启动独立后台进程；不安装开机自启服务。
+8. 同一素材库的 HTTP 网页与多个 MCP 连接必须通过独立后台进程共享唯一 `InboxService`。MCP 经当前用户私有 Unix socket 调用，不能另外启动 watcher、周期校准或 Downloads 搬运。
 
 ## Chrome 扩展
 
@@ -54,7 +54,7 @@ Pinterest 图版
 
 ## Inbox 与缩略图
 
-- MCP 进程启动时先收取临时区，再完整扫描长期库；随后用 `fs.watch` 同时监听两个目录，关闭时释放所有 watcher 与 timer。
+- 首次素材工具调用按需启动后台服务，先收取临时区、完整扫描长期库，再用 `fs.watch` 监听两个目录。MCP 退出仅关闭自己的连接；后台服务退出才释放 watcher 与 timer。
 - 文件事件经 250ms 去抖后立即收取；每 10 秒全量校准，并提供显式强制刷新，弥补文件系统事件遗漏。收取过程中又收到新事件时必须追加一轮，不得丢失变更。
 - 忽略隐藏路径、`.crdownload`、`.tmp` 和非图片文件。
 - 收取前必须确认文件体积与修改时间已稳定；保留相对图版路径，以目标临时文件 + SHA-256 校验 + 无覆盖落盘完成搬运，成功后才移除临时源文件。
@@ -70,8 +70,8 @@ Pinterest 图版
 
 ### `open_pinterest_inbox_web`
 
-- 懒启动与 MCP 同进程的本地 HTTP 网页，始终绑定 `127.0.0.1`，端口默认由系统动态分配。
-- MCP 宿主启动窗口为 120 秒，为首次安全收取大批 Downloads 积压留出时间；常规空库或小库应快速就绪。
+- 懒启动独立后台服务中的 HTTP 网页，始终绑定 `127.0.0.1`。首次动态分配端口并持久保存，此后重启复用；端口被占用则报错，不随机漂移。
+- MCP 协议连接快速就绪；后台服务首次启动最多等待 25 秒。批量积压收取超时会报错，之后可重试连接仍在启动的同一服务。
 - 可选输入 `referenceSessionId`。不传时创建独立空参考篮，返回 `referenceSessionId` 与 `http://127.0.0.1:<port>/?ref=<id>`；传入时复用该会话。URL 供 Codex 内嵌浏览器在右侧打开。
 - 重复调用复用同一网页实例，不创建第二个 Inbox 监听器。
 - 如旧网页正在停止，新的打开请求必须等待旧实例完全释放后再启动，不得重叠两个 HTTP 服务。
@@ -80,7 +80,7 @@ Pinterest 图版
 
 - 必填 `referenceSessionId`，可选 `expectedRevision`；只读返回有序文件编号、标题、canonical absolute path 和 revision。
 - 每次首次打开独立创建 128 位随机会话 ID，禁止根据最后打开的面板、进程或工作区推断任务。MCP 无可信任务身份 API，因此这是显式会话隔离，不宣称宿主身份认证；代理只续用本任务工具返回的 ID。
-- 参考篮在 MCP 内存中保存，最多 64 个会话；停止 HTTP 不清空，MCP 重启失效。无新存储格式或数据迁移。
+- 参考篮以 0600 权限 JSON 原子落盘，保存 ID、顺序、revision 与原文件指纹；MCP 及后台重启均不清空。写入失败不发布新版本，状态损坏不静默重建。旧版已经丢失的内存会话无法迁移。
 - 最多 10 张，禁止重复 ID。修改需 revision 一致；并发冲突不覆盖。
 - 加入前检查实时文件大小、mtime 与索引一致；选中时记录 dev、ino、大小、mtime、ctime 指纹，读取时复核真实路径与指纹。任何选中项丢失或变化都阻止整组读取，调整顺序不会自动接受新文件。此检查覆盖常规替换，不是外部写入者与后续模型读文件之间的原子快照。
 - 工具只提供原文件路径，代理必须实际查看原图后再分析或生成；不把标题或缩略图当原图，也不注入原生输入框附件。
@@ -91,8 +91,9 @@ Pinterest 图版
 
 ### `stop_pinterest_inbox_web`
 
-- 只关闭当前任务的 HTTP 网页；Inbox 监听、MCP 和旧内嵌面板保持可用。
-- MCP 进程退出或 stdio EOF 时必须先停止 HTTP 接收请求，再释放 Inbox watcher / timer；活动 HTTP 连接最多等待 500ms 后强制断开。已经启动的 `sips` 由 15 秒超时收尾；剪贴板写入及读回核对共用 5 秒期限。
+- 关闭共享 HTTP 网页，会影响所有打开的看板；Inbox 监听、参考篮、MCP 和旧内嵌面板保持可用。
+- MCP 进程退出或 stdio EOF 不得停止后台服务。显式关闭 HTTP 或终止后台时，活动连接最多等待 500ms 后强制断开。已经启动的 `sips` 由 15 秒超时收尾；剪贴板写入及读回核对共用 5 秒期限。
+- 后台重启后的 401/403 由页面合并为一次重新认证；读取可重试一次，复制、删除、选图写入不得自动重放。重新认证后清除旧索引版本与缩略图缓存。
 
 ### `render_pinterest_reference_panel`
 
