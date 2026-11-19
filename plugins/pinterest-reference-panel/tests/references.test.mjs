@@ -51,7 +51,7 @@ test("reference validation rejects duplicates, oversized sets and arbitrary iden
   assert.equal((await references.describe(session)).revision, 0);
 });
 
-test("changed, missing and escaping reference files block the entire read and never silently refresh consent", async t => {
+test("changed, missing and escaping reference files block the entire read and never silently refresh consent", { skip: process.platform === "win32" && "creating symlinks needs elevated rights on Windows" }, async t => {
   const { references, inbox, assets, root } = await fixture(t);
   const session = references.create();
   const ids = assets.slice(0, 2).map(asset => asset.id);
@@ -122,7 +122,7 @@ test("HTTP references serve original bytes, protect mutations, keep paths privat
   assert.equal((await call("/api/references/clipboard", { revision: 0 })).status, 409);
   const copy = await (await call("/api/references/clipboard", { revision: 1 })).json();
   assert.equal(copy.count, 2);
-  assert.deepEqual(copied, [(await Promise.all(originals.map(asset => realpath(asset.sourcePath)))).join("\n")]);
+  assert.deepEqual(copied, [(await Promise.all(originals.map(asset => realpath(asset.sourcePath)))).join(process.platform === "win32" ? "\r\n" : "\n")]);
   for (let index = 0; index < originals.length; index++) {
     const asset = originals[index];
     assert.deepEqual(await readFile(asset.sourcePath), bytes);
@@ -142,7 +142,7 @@ test("durable baskets preserve order, isolation, revisions and fingerprints acro
   const restored = new ReferenceSessions(inbox, path);
   assert.deepEqual((await restored.resolve(a, 1)).files.map(file => file.assetId), ids);
   assert.equal((await restored.describe(b)).entries.length, 0);
-  assert.equal((await stat(path)).mode & 0o777, 0o600);
+  if (process.platform !== "win32") assert.equal((await stat(path)).mode & 0o777, 0o600); // Windows has no POSIX mode bits
   const changed = await inbox.resolveAsset(ids[0]);
   await writeFile(changed.sourcePath, "changed after restart");
   await assert.rejects(restored.resolve(a, 1), /已变化/);

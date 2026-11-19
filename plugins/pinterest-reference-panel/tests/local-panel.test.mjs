@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { Server, request as httpRequest } from "node:http";
 import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { test } from "node:test";
 import { InboxService, ReferenceSessions, startLocalPanelServer } from "../dist/server.bundle.js";
 import { rename } from "node:fs/promises";
@@ -98,7 +98,7 @@ test("local panel is loopback-only, session protected, and copies only a resolve
     assert.equal(JSON.stringify(list).includes(inboxRoot), false);
     const assetId = list.page.assets[0].id;
 
-    if (process.platform === "darwin") {
+    if (process.platform === "darwin" || process.platform === "win32") {
       const thumbnailResponse = await api(panel.url, session, `/api/thumbnails/${assetId}`);
       assert.equal(thumbnailResponse.status, 200);
       assert.equal(thumbnailResponse.headers.get("content-type"), "image/jpeg");
@@ -344,7 +344,7 @@ test("trash moves only an indexed original out of the library and drops it from 
     trashFile: async (path) => {
       if (failTrash) throw new Error(`injected failure for ${path}`);
       trashed.push(path);
-      await rename(path, join(trashRoot, path.split("/").at(-1)));
+      await rename(path, join(trashRoot, basename(path)));
     }
   });
   await inbox.start();

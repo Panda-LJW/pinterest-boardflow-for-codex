@@ -8,7 +8,7 @@
     "build": "npm run check && esbuild src/server.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/server.bundle.js",
     "check": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/server.bundle.js",
-    "test": "npm run build && node --test tests/*.test.mjs"
+    "test": "npm run build && node ../../scripts/node-test.mjs tests"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

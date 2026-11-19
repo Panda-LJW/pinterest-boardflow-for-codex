@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { appDirectory } from "./platform.js";
 import { execFile } from "node:child_process";
 import { constants, existsSync } from "node:fs";
 import { access, copyFile, lstat, mkdir, readFile, realpath, rename, rm, stat } from "node:fs/promises";
@@ -45,7 +46,7 @@ export class WorkspaceRegistry {
   private readonly platform: NodeJS.Platform;
 
   constructor(options: WorkspaceRegistryOptions = {}) {
-    this.derivativeCacheRoot = resolve(options.derivativeCacheRoot ?? join(homedir(), "Library", "Caches", "pinterest-reference-panel", "references"));
+    this.derivativeCacheRoot = resolve(options.derivativeCacheRoot ?? join(appDirectory("cache"), "references"));
     this.imageProcessorPath = options.imageProcessorPath ?? "/usr/bin/sips";
     this.platform = options.platform ?? process.platform;
   }

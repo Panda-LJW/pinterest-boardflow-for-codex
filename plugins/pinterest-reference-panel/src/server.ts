@@ -13,6 +13,9 @@ export { InboxService, parseImageDimensions, parseInboxFilename } from "./inbox.
 export { startLocalPanelServer, writeTextToMacClipboard } from "./local-panel-server.js";
 export { PanelDaemonClient, daemonPaths } from "./panel-daemon.js";
 export { WorkspaceRegistry } from "./workspace.js";
+export { appDirectory, controlEndpoint, userKey } from "./platform.js";
+export { moveToTrash } from "./inbox.js";
+export { writeTextToClipboard } from "./local-panel-server.js";
 export { ReferenceSessions, ReferenceError } from "./references.js";
 
 const PANEL_URI = "ui://pinterest-reference-panel/panel.html";

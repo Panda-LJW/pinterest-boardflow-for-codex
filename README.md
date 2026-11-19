@@ -6,7 +6,7 @@
 
 Chrome 下载器 · 本地瀑布流素材库 · Codex / Claude Code 插件
 
-![版本 0.5.1](https://img.shields.io/badge/版本-0.5.1-e60023) ![macOS](https://img.shields.io/badge/macOS-Chrome%20116%2B-111111) ![Codex · Claude Code](https://img.shields.io/badge/Codex%20·%20Claude%20Code-插件-6b6b6b) ![MIT](https://img.shields.io/badge/license-MIT-6b6b6b)
+![版本 0.5.1](https://img.shields.io/badge/版本-0.5.1-e60023) ![macOS · Windows](https://img.shields.io/badge/macOS%20·%20Windows-Chrome%20116%2B-111111) ![Codex · Claude Code](https://img.shields.io/badge/Codex%20·%20Claude%20Code-插件-6b6b6b) ![MIT](https://img.shields.io/badge/license-MIT-6b6b6b)
 
 [快速开始](#install) · [怎么用](#workflow) · [快捷键](#shortcuts) · [常见问题](#faq)
 
@@ -45,7 +45,7 @@ Chrome 下载器 · 本地瀑布流素材库 · Codex / Claude Code 插件
 
 ### ② 在本地看板里挑选
 
-插件运行时，下载的图片会自动收进 `~/Pictures/PinterestInbox`，按图版分好文件夹。看板里可以搜索标题、图版或 Pin ID，按时间或标题排序。
+插件运行时，下载的图片会自动收进“图片”文件夹下的 `PinterestInbox`，按图版分好文件夹。看板里可以搜索标题、图版或 Pin ID，按时间或标题排序。
 
 <p align="center">
   <img src="docs/images/boardflow-dashboard.png" alt="瀑布流看板：选中的图片带红色编号，下方的悬浮参考篮按顺序排好 3 张图" width="100%">
@@ -70,7 +70,7 @@ Chrome 下载器 · 本地瀑布流素材库 · Codex / Claude Code 插件
 
 > 用选中的参考图，先逐张看一遍。参考第 1 张的配色和第 2 张的版式，帮我设计一张活动海报。
 
-AI 会通过插件拿到这组原图的本地路径，并实际打开每张图再动手。也可以按 <kbd>⌘C</kbd> 复制整组路径，粘贴到任何地方。
+AI 会通过插件拿到这组原图的本地路径，并实际打开每张图再动手。也可以按 <kbd>⌘C</kbd>（Windows 上是 <kbd>Ctrl+C</kbd>）复制整组路径，粘贴到任何地方。
 
 <table>
   <tr>
@@ -83,7 +83,7 @@ AI 会通过插件拿到这组原图的本地路径，并实际打开每张图�
 
 ## 快速开始
 
-需要 **macOS**、**Chrome 116+**、**Node.js 20+**，以及 Codex 或 Claude Code 其中之一。
+需要 **macOS** 或 **Windows 10 / 11**、**Chrome 116+**、**Node.js 20+**，以及 Codex 或 Claude Code 其中之一。Windows 上的命令在 PowerShell 里运行即可。
 
 **1. 获取仓库**
 
@@ -106,7 +106,7 @@ codex plugin marketplace add "$PWD"
 codex plugin add pinterest-reference-panel@personal
 ```
 
-在 Claude Code 中使用，在 Claude Code 里输入（把路径换成仓库的实际位置）：
+在 Claude Code 中使用，在 Claude Code 里输入（把路径换成仓库的实际位置，Windows 上类似 `C:\Users\你\pinterest-boardflow-for-codex`）：
 
 ```text
 /plugin marketplace add /path/to/pinterest-boardflow-for-codex
@@ -124,13 +124,13 @@ codex plugin add pinterest-reference-panel@personal
 | 按键 | 作用 |
 | --- | --- |
 | 点击图片 | 加入 / 移出参考篮 |
-| <kbd>⌘C</kbd> | 复制路径：预览中复制当前这张；参考篮有图时复制整组；否则复制鼠标下的那张 |
+| <kbd>⌘C</kbd> · <kbd>Ctrl+C</kbd> | 复制路径：预览中复制当前这张；参考篮有图时复制整组；否则复制鼠标下的那张 |
 | <kbd>Esc</kbd> | 清空参考篮（预览打开时则是关闭预览） |
-| <kbd>⌘Z</kbd> | 8 秒内撤销清空 |
+| <kbd>⌘Z</kbd> · <kbd>Ctrl+Z</kbd> | 8 秒内撤销清空 |
 | <kbd>空格</kbd> | 预览中：加入 / 移出参考篮 |
 | <kbd>←</kbd> <kbd>→</kbd> | 预览中：上一张 / 下一张 |
 | 双击 · <kbd>Z</kbd> | 预览中：放大到原尺寸，再按一次还原 |
-| <kbd>Delete</kbd> 两次 | 预览中：把这张图移到废纸篓（可在访达里放回） |
+| <kbd>Delete</kbd> 两次 | 预览中：把这张图移到废纸篓或回收站（可以还原） |
 
 <a id="faq"></a>
 
@@ -140,12 +140,12 @@ codex plugin add pinterest-reference-panel@personal
 <summary><strong>图片存在哪里？会不会被改动？</strong></summary>
 <br>
 
-| 位置 | 用途 |
-| --- | --- |
-| `~/Downloads/PinterestInbox/` | Chrome 的临时下载区 |
-| `~/Pictures/PinterestInbox/` | 长期素材库，按图版分文件夹 |
-| `~/Library/Caches/pinterest-reference-panel/` | 缩略图缓存，可以随时清理 |
-| `~/Library/Application Support/pinterest-reference-panel/` | 参考篮、固定端口记录与服务日志 |
+| 用途 | macOS | Windows |
+| --- | --- | --- |
+| Chrome 的临时下载区 | `~/Downloads/PinterestInbox/` | `%USERPROFILE%\Downloads\PinterestInbox\` |
+| 长期素材库，按图版分文件夹 | `~/Pictures/PinterestInbox/` | `%USERPROFILE%\Pictures\PinterestInbox\` |
+| 缩略图缓存，可以随时清理 | `~/Library/Caches/pinterest-reference-panel/` | `%LOCALAPPDATA%\pinterest-reference-panel\Cache\` |
+| 参考篮、固定端口记录与服务日志 | `~/Library/Application Support/pinterest-reference-panel/` | `%APPDATA%\pinterest-reference-panel\` |
 
 插件会把临时区的文件校验后移进长期库。同名同内容自动去重，同名不同内容另存一份，不会覆盖旧图。文件名是“标题__pin-编号”，在访达里也好找。浏览、选图、复制路径都不会改动原图。
 
@@ -180,6 +180,17 @@ Codex 会尽量在右侧内嵌浏览器打开；如果只是排队没显示，�
 从 0.5.1 起，看板由独立后台进程运行。同一素材库的多个对话共用一个服务，插件连接关闭不会关闭网页。参考篮及其顺序、版本会保存到本机，重连时传回原来的会话 ID 即可继续；后台进程重启后沿用保存的端口，页面会重新认证。
 
 服务被系统结束或电脑重启后，需要再次调用插件来启动后台服务；这不是开机自启服务。已保存端口被其他程序占用时会报告启动失败，不会悄悄改成新地址。停止网页工具会影响全部打开的看板，但保留参考篮。升级前已经丢失的内存参考篮无法恢复，第一次升级需重新打开看板。
+
+</details>
+
+<details>
+<summary><strong>Windows 上有什么不同？</strong></summary>
+<br>
+
+- 快捷键用 <kbd>Ctrl</kbd> 代替 <kbd>⌘</kbd>，看板会自动显示对应的按键。
+- 删除的图片进入回收站，可以在回收站里还原。
+- 缩略图由系统自带的图像组件生成；WebP、AVIF 等它不认识的格式，会直接显示原图。
+- 复制路径和缩略图都通过系统自带的 Windows PowerShell 完成，不需要额外安装工具。
 
 </details>
 
