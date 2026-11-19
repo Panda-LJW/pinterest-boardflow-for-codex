@@ -215,7 +215,17 @@ export async function runPanelDaemon() {
       if (localPanel) return localPanel;
       if (!localPanelStart) localPanelStart = (async () => {
         // A saved port is never silently replaced: old URLs must remain meaningful.
-        const handle = await startLocalPanelServer({ inbox, references, port: preferredPort });
+        // After a crash the OS may hold the old listener briefly (Windows does), so retry
+        // EADDRINUSE for a few seconds before reporting the conflict.
+        let handle: LocalPanelServerHandle | undefined;
+        for (let attempt = 0; !handle; attempt++) {
+          try { handle = await startLocalPanelServer({ inbox, references, port: preferredPort }); }
+          catch (error) {
+            if (!preferredPort || (error as NodeJS.ErrnoException).code !== "EADDRINUSE" || attempt >= 30) throw error;
+            if (attempt === 0) log(`port ${preferredPort} busy, waiting for it to be released`);
+            await delay(200);
+          }
+        }
         try { writeState(portPath, { version: 1, port: handle.port, enabled: true }); }
         catch (error) { await handle.close(); throw error; }
         preferredPort = handle.port;

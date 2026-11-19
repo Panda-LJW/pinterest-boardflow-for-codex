@@ -38129,7 +38129,16 @@ async function runPanelDaemon() {
       if (localPanelStop) await localPanelStop;
       if (localPanel) return localPanel;
       if (!localPanelStart) localPanelStart = (async () => {
-        const handle = await startLocalPanelServer({ inbox: inbox2, references, port: preferredPort });
+        let handle;
+        for (let attempt = 0; !handle; attempt++) {
+          try {
+            handle = await startLocalPanelServer({ inbox: inbox2, references, port: preferredPort });
+          } catch (error62) {
+            if (!preferredPort || error62.code !== "EADDRINUSE" || attempt >= 30) throw error62;
+            if (attempt === 0) log(`port ${preferredPort} busy, waiting for it to be released`);
+            await delay(200);
+          }
+        }
         try {
           writeState(portPath, { version: 1, port: handle.port, enabled: true });
         } catch (error62) {

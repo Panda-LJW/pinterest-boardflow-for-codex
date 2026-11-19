@@ -122,7 +122,7 @@ test("HTTP references serve original bytes, protect mutations, keep paths privat
   assert.equal((await call("/api/references/clipboard", { revision: 0 })).status, 409);
   const copy = await (await call("/api/references/clipboard", { revision: 1 })).json();
   assert.equal(copy.count, 2);
-  assert.deepEqual(copied, [(await Promise.all(originals.map(asset => realpath(asset.sourcePath)))).join("\n")]);
+  assert.deepEqual(copied, [(await Promise.all(originals.map(asset => realpath(asset.sourcePath)))).join(process.platform === "win32" ? "\r\n" : "\n")]);
   for (let index = 0; index < originals.length; index++) {
     const asset = originals[index];
     assert.deepEqual(await readFile(asset.sourcePath), bytes);

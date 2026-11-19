@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -10,16 +11,30 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 const pluginRoot = new URL("../", import.meta.url);
 
+// Appended to failure messages so CI shows why the background service failed.
+function serviceLogs(stateRoot) {
+  try {
+    return readdirSync(stateRoot).map(key => join(stateRoot, key, "service.log")).filter(path => existsSync(path))
+      .map(path => `\n--- ${path}\n${readFileSync(path, "utf8").slice(-4000)}`).join("");
+  } catch { return ""; }
+}
+
 async function cleanupDaemon(root, inboxRoot) {
   const previous = { ...process.env };
   try {
     process.env.PINTEREST_INBOX_DIR = inboxRoot;
     process.env.PINTEREST_PANEL_STATE_DIR = join(root, "state");
     const daemon = new PanelDaemonClient();
-    if ((await daemon.status()).pid) {
+    const pid = (await daemon.status()).pid;
+    if (pid) {
       await daemon.call("shutdown");
       for (let attempt = 0; attempt < 100; attempt++) {
         if (!(await daemon.status()).pid) break;
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      // Windows will not delete a log file the exiting service still holds open.
+      for (let attempt = 0; attempt < 150; attempt++) {
+        try { process.kill(pid, 0); } catch { break; }
         await new Promise(resolve => setTimeout(resolve, 20));
       }
     }
@@ -89,7 +104,7 @@ test("stdio MCP lists Inbox content and safely imports one indexed image", async
   context.after(async () => {
     await client.close();
     await cleanupDaemon(root, inboxRoot);
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   });
   await client.connect(transport);
 
@@ -144,7 +159,7 @@ test("stdio MCP lists Inbox content and safely imports one indexed image", async
   const read = await client.callTool({ name: "get_pinterest_reference_selection", arguments: { referenceSessionId, expectedRevision: 1 } });
   assert.equal(read.isError, undefined);
   assert.equal(read.structuredContent.files[0].assetId, assetId);
-  assert.match(read.structuredContent.files[0].path, /editorial\/456__signal-poster\.jpg$/);
+  assert.match(read.structuredContent.files[0].path, /editorial[\\/]456__signal-poster\.jpg$/);
   const unversioned = await client.callTool({ name: "get_pinterest_reference_selection", arguments: { referenceSessionId } });
   assert.equal(unversioned.structuredContent.files[0].assetId, assetId);
   const empty = await client.callTool({ name: "get_pinterest_reference_selection", arguments: { referenceSessionId: other.structuredContent.referenceSessionId } });
@@ -208,7 +223,7 @@ test("stdio EOF exits promptly while the independent local panel remains reachab
   } finally {
     await client.close();
     await cleanupDaemon(root, inboxRoot);
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -258,7 +273,7 @@ test("open waits for an in-flight stop and never overlaps local panel instances"
     heldRequest?.destroy();
     await client.close();
     await cleanupDaemon(root, inboxRoot);
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -287,12 +302,14 @@ test("SIGTERM exits the MCP process without interrupting the local panel", async
     assert.equal(child.kill("SIGTERM"), true);
     const result = await closed;
     assert.ok(Date.now() - startedAt < 1_800, "signal cleanup should finish promptly");
-    assert.deepEqual(result, { code: 0, signal: null }, Buffer.concat(stderr).toString("utf8"));
+    // Windows has no catchable SIGTERM: Node terminates the process outright.
+    if (process.platform === "win32") assert.ok(result.code === 0 || result.signal === "SIGTERM", JSON.stringify(result));
+    else assert.deepEqual(result, { code: 0, signal: null }, Buffer.concat(stderr).toString("utf8"));
     assert.equal((await fetch(opened.structuredContent.url)).status, 200);
   } finally {
     await client.close();
     await cleanupDaemon(root, inboxRoot);
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -319,7 +336,7 @@ test("local panel startup errors are sanitized in MCP tool output", async () => 
   } finally {
     await client.close();
     await cleanupDaemon(root, inboxRoot);
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -366,7 +383,7 @@ test("concurrent MCP hosts share one service and recover the same URL and basket
       await new Promise(resolve => setTimeout(resolve, 20));
     }
     const recovered = await c.callTool({ name: "open_pinterest_inbox_web", arguments: { referenceSessionId: opened.referenceSessionId } });
-    assert.equal(recovered.isError, undefined, JSON.stringify(recovered));
+    assert.equal(recovered.isError, undefined, JSON.stringify(recovered) + serviceLogs(join(root, "state")));
     assert.equal(recovered.structuredContent.url, opened.url);
     assert.notEqual(recovered.structuredContent.pid, opened.pid);
     const read = await c.callTool({ name: "get_pinterest_reference_selection", arguments: { referenceSessionId: opened.referenceSessionId, expectedRevision: 1 } });
@@ -379,6 +396,6 @@ test("concurrent MCP hosts share one service and recover the same URL and basket
   } finally {
     await Promise.all(clients.map(client => client.close()));
     await cleanupDaemon(root, inboxRoot);
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
